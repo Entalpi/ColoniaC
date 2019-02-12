@@ -6,13 +6,29 @@
 #include <sys/time.h>
 #include <time.h>
 
-// ncurses utility functions
-// TODO: Not implemented
+/***** ncurses utility functions *****/
 static inline void mvclrprintw(int y, int x, char *fmt, ...) {
-  exit(-1);
+  exit(-1); // TODO: Not implemented
   move(y, x);
   clrtoeol();
   // printw(fmt, ???);
+}
+
+// Allocs a new window and sets a box around it plus displays it
+WINDOW *create_newwin(const int height, const int width, const int starty,
+                      const int startx) {
+  WINDOW *local_win;
+  local_win = newwin(height, width, starty, startx);
+  box(local_win, 0, 0);
+  wrefresh(local_win);
+  return local_win;
+}
+
+void destroy_win(WINDOW *win) {
+  wborder(win, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
+  wclear(win);
+  wrefresh(win);
+  delwin(win);
 }
 
 static WINDOW *root = NULL; // FIXME: ...
@@ -90,33 +106,34 @@ void imperator_demands_money(struct Effect *effect) {
   }
   struct City *c = (struct City *)effect->resrc;
   const float x = rand() / (float)RAND_MAX;
-  if (x < 0.1) {
-    mvprintw(15, 0,
-             "Emperor <EMPEROR-NAME> demands more gold for his construction of "
-             "<CONSTRUCTION-NAME> \n \t\t\t\t y/n");
-    nodelay(root, false); /* Make getch non-blocking */
+  if (x < 1) {
+
+    const int h = 10;
+    const int w = 40;
+    WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
+    mvwprintw(
+        win, 1, 1,
+        "Emperor <EMPEROR-NAME> demands more gold for his construction of "
+        "<CONSTRUCTION-NAME> \n \t\t\t y/n");
+    nodelay(win, false); /* Make getch non-blocking */
     while (true) {
-      const char ch = getch();
+      const char ch = wgetch(win);
       if (ch == 'y') {
-        move(15, 0);
-        clrtoeol();
-        mvprintw(15, 0,
-                 "Emperor <EMPEROR-NAME> is satisfied and his opinion of you "
-                 "has been elevated");
+        mvwprintw(win, 1, 1,
+                  "Emperor <EMPEROR-NAME> is satisfied and his opinion of you "
+                  "has been elevated");
         c->gold -= 50;
         break;
       }
       if (ch == 'n') {
-        move(15, 0);
-        clrtoeol();
-        mvprintw(15, 0,
-                 "Emperor <EMPEROR-NAME> recalls some of <LEGIO-NAME> from "
-                 "<CITY-NAME>");
+        mvwprintw(win, 1, 1,
+                  "Emperor <EMPEROR-NAME> recalls some of <LEGIO-NAME> from "
+                  "<CITY-NAME>");
         c->population -= 50;
         break;
       }
     }
-    nodelay(root, true); /* Make getch non-blocking */
+    destroy_win(win);
   }
 }
 
