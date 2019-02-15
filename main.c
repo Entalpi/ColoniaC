@@ -1,17 +1,28 @@
 #include <assert.h>
 #include <ncurses.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
 
+// TODO: Add an event log
+// Event: "Our scouts report that barbarians are gathering under the cmd of
+// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
+// spoiling? Food production should vary with seasons
+
+static WINDOW *root = NULL; // FIXME: ...
+
 /***** ncurses utility functions *****/
-static inline void mvclrprintw(int y, int x, char *fmt, ...) {
-  exit(-1); // TODO: Not implemented
+/// MVove, CLearR, PRINT Word
+static inline void mvclrprintw(WINDOW *win, int y, int x, const char *fmt,
+                               ...) {
   move(y, x);
   clrtoeol();
-  // printw(fmt, ???);
+  va_list args;
+  va_start(args, fmt);
+  vwprintw(win, fmt, args);
 }
 
 // Allocs a new window and sets a box around it plus displays it
@@ -31,11 +42,13 @@ void destroy_win(WINDOW *win) {
   delwin(win);
 }
 
-static WINDOW *root = NULL; // FIXME: ...
+static uint64_t timestep = 0;
 
-// TODO: Implement time system
-// Need to store some consuls names and generate the sequences dynamically
-static uint32_t timestep = 0;
+const char *get_year_name(const uint64_t timestep) {
+  // TODO: Implement time system
+  // Need to store some consuls names and generate the sequences dynamically
+  return "Year of CON III Grassius & CON I Octavian";
+}
 
 struct City {
   char *name;
@@ -52,22 +65,16 @@ struct City {
 #define FOREVER -1
 struct Effect {
   void *resrc;      // Ptr to the resource affected
-  int32_t dt;       // Modifier
-  int32_t duration; // Negative for forever
+  int64_t duration; // Negative for forever
   void (*tick_effect)(struct Effect *effect);
 };
-
-void default_tick_effect(struct Effect *effect) {
-  assert(effect);
-  *(uint32_t *)(effect->resrc) += effect->dt;
-}
 
 void farm_tick_effect(struct Effect *effect) {
   assert(effect);
   // TODO: Formula for typical farm output in number of calories around in Roman
   // times
   if (timestep % 2 == 0) {
-    *(uint32_t *)(effect->resrc) += effect->dt;
+    *(uint32_t *)(effect->resrc) += 1;
   }
 }
 
@@ -97,11 +104,10 @@ void pops_population_tick_effect(struct Effect *effect) {
   }
 }
 
-// TODO: Implement with window instead
 void imperator_demands_money(struct Effect *effect) {
   assert(effect);
   assert(effect->resrc);
-  if (timestep % 25 != 0) {
+  if (timestep % 100 != 0) {
     return;
   }
   struct City *c = (struct City *)effect->resrc;
@@ -141,13 +147,14 @@ void imperator_demands_money(struct Effect *effect) {
 void next_timestep(struct City *c) {
   for (size_t i = 0; i < c->num_effects; i++) {
     c->effects[i].tick_effect(&c->effects[i]);
-  }
-  for (size_t i = 0; i < c->num_effects; i++) {
-    if (c->effects[i].duration >= 0) {
-      c->effects[i].duration--;
-      if (c->effects[i].duration == 0) {
-        fprintf(stderr, "Warning: // TODO: Remove the effect \n");
-      }
+    if (c->effects[i].duration == FOREVER) {
+      continue;
+    }
+    c->effects[i].duration--;
+    if (c->effects[i].duration == 0) {
+      c->effects[i] = c->effects[c->num_effects - 1];
+      c->num_effects--;
+      i--;
     }
   }
   timestep++;
@@ -156,18 +163,17 @@ void next_timestep(struct City *c) {
 /// Display vital numbers in the user interface
 void update_ui(const struct City *c) {
   assert(c);
-  mvprintw(0, 0, "Colonia %s", c->name);
-  mvprintw(1, 0, "Year of CON III Grassius & CON I Octavian, day XYZ, hour %u",
-           timestep % 24);
-  mvprintw(3, 0, "Population: %u", c->population);
-  mvprintw(4, 0, "Food: %u", c->food);
-  move(5, 0);
-  clrtoeol();
-  mvprintw(5, 0, "Gold: %u", c->gold);
+  mvclrprintw(root, 0, 0, "Colonia %s", c->name);
+  mvclrprintw(root, 1, 0, "%s, day %u, hour %u", get_year_name(timestep),
+              timestep / 24, // TODO: Use the Roman calendar
+              timestep % 24);
+  mvclrprintw(root, 3, 0, "Population: %u", c->population);
+  mvclrprintw(root, 4, 0, "Food: %u", c->food);
+  mvclrprintw(root, 5, 0, "Gold: %u", c->gold);
 
   // TODO: Implement controls and menu system
-  mvprintw(LINES - 1, 0,
-           "Q: menu (quit for now) | C: construction | P: policy");
+  mvclrprintw(root, LINES - 1, 0,
+              "Q: menu (quit for now) | C: construction | P: policy");
   // TODO: Pause, speed step
 }
 
@@ -190,17 +196,16 @@ int main() {
   city.gold = 100;
   city.population = 5500; // TODO: Several types of people?
 
-  struct Effect farm = {.resrc = &city.food, .dt = 1, .duration = FOREVER};
+  struct Effect farm = {.resrc = &city.food, .duration = FOREVER};
   farm.tick_effect = farm_tick_effect;
 
-  struct Effect food_eating = {.resrc = &city, .dt = 0, .duration = FOREVER};
+  struct Effect food_eating = {.resrc = &city, .duration = FOREVER};
   food_eating.tick_effect = pops_eating_tick_effect;
 
-  struct Effect pops = {.resrc = &city, .dt = 0, .duration = FOREVER};
+  struct Effect pops = {.resrc = &city, .duration = FOREVER};
   pops.tick_effect = pops_population_tick_effect;
 
-  struct Effect emperor_gold_demands = {
-      .resrc = &city, .dt = 0, .duration = FOREVER};
+  struct Effect emperor_gold_demands = {.resrc = &city, .duration = FOREVER};
   emperor_gold_demands.tick_effect = imperator_demands_money;
 
   city.num_effects = 4;
