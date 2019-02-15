@@ -11,6 +11,8 @@
 // Event: "Our scouts report that barbarians are gathering under the cmd of
 // <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
 // spoiling? Food production should vary with seasons
+// Tax collection should be simulated by trying to model how they collected
+// taxes in the early Roman Empire.
 
 static WINDOW *root = NULL; // FIXME: ...
 
@@ -181,6 +183,7 @@ int main() {
   srand(time(NULL));
   root = initscr(); /* initialize the curses library */
 
+  // TOOD: Add help flag with descriptions
   // TODO: Hard mode = Everything is in Latin. Enjoy.
 
   cbreak();             /* Line buffering disabled pass on everything to me*/
