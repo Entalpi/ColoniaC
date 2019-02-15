@@ -46,10 +46,15 @@ void destroy_win(WINDOW *win) {
 
 static uint64_t timestep = 0;
 
-const char *get_year_name(const uint64_t timestep) {
+const char *get_year_str(const uint64_t timestep) {
   // TODO: Implement time system
   // Need to store some consuls names and generate the sequences dynamically
   return "Year of CON III Grassius & CON I Octavian";
+}
+
+const char* get_season_str(const uint64_t timestep) {
+  // TODO: Implement
+  return "winter"; 
 }
 
 struct City {
@@ -114,8 +119,7 @@ void imperator_demands_money(struct Effect *effect) {
   }
   struct City *c = (struct City *)effect->resrc;
   const float x = rand() / (float)RAND_MAX;
-  if (x < 1) {
-
+  if (x < 1.0f) {
     const int h = 10;
     const int w = 40;
     WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
@@ -166,9 +170,9 @@ void next_timestep(struct City *c) {
 void update_ui(const struct City *c) {
   assert(c);
   mvclrprintw(root, 0, 0, "Colonia %s", c->name);
-  mvclrprintw(root, 1, 0, "%s, day %u, hour %u", get_year_name(timestep),
+  mvclrprintw(root, 1, 0, "%s, day %u, hour %u, %s", get_year_str(timestep),
               timestep / 24, // TODO: Use the Roman calendar
-              timestep % 24);
+              timestep % 24, get_season_str(timestep));
   mvclrprintw(root, 3, 0, "Population: %u", c->population);
   mvclrprintw(root, 4, 0, "Food: %u", c->food);
   mvclrprintw(root, 5, 0, "Gold: %u", c->gold);
