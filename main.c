@@ -23,6 +23,30 @@ static inline float maxi(const uint32_t a, const uint32_t b) {
 
 static WINDOW *root = NULL; // FIXME: ...
 
+struct Date {
+  uint32_t day;
+  uint32_t month;
+  uint32_t year;
+};
+
+static struct Date date;
+
+static inline const char *get_month_str(struct Date date) {
+  assert(date.month <= 11 && date.month >= 0);
+  static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
+                                     "Aprilis",   "Maius",      "Iunius",
+                                     "Iulius",    "Augustus",   "September",
+                                     "October",   "November",   "December"};
+  return month_strs[date.month];
+}
+
+static inline uint32_t get_days_in_month(struct Date date) {
+  assert(date.month <= 11 && date.month >= 0);
+  static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
+                                        31, 31, 30, 31, 30, 31};
+  return month_lngs[date.month];
+}
+
 /***** ncurses utility functions *****/
 /// MVove, CLearR, PRINT Word
 static inline void mvclrprintw(WINDOW *win, int y, int x, const char *fmt,
@@ -209,9 +233,11 @@ void next_timestep(struct City *c) {
 /// Display vital numbers in the user interface
 void update_ui(const struct City *c) {
   assert(c);
+  
+  date.day = (timestep / 24) % get_days_in_month(date);
   mvclrprintw(root, 0, 0, "Colonia %s", c->name);
-  mvclrprintw(root, 1, 0, "%s, day %u, hour %u, %s", get_year_str(timestep),
-              timestep / 24, // TODO: Use the Roman calendar
+  mvclrprintw(root, 1, 0, "%s, day %u of %s, hour %u, %s",
+              get_year_str(timestep), date.day, get_month_str(date),
               timestep % 24, get_season_str(timestep));
   mvclrprintw(root, 3, 0, "Population: %u", c->population);
   mvclrprintw(root, 4, 0, "Food: %i kg", c->food);
@@ -225,6 +251,7 @@ void update_ui(const struct City *c) {
   // TODO: Show drastically declining (good) numbers in reddish, yellowish for
   // stable values, green for increasing (good) values and vice versa for bad
   // values like deaths
+  // TODO: Show deltas for the month next to the current values
 }
 
 int main() {
