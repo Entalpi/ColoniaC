@@ -14,6 +14,8 @@
 // Tax collection should be simulated by trying to model how they collected
 // taxes in the early Roman Empire.
 
+#define KEY_ESCAPE 27
+
 // TODO: Refactor into math.h?
 static inline float maxf(const float a, const float b) { return a < b ? b : a; }
 
@@ -99,6 +101,14 @@ const char *get_season_str(const uint64_t timestep) {
   return "winter";
 }
 
+struct ConstructionProject {
+  uint32_t cost;
+  uint32_t maintenance;
+  char *name_str;
+  char *description_str;
+  struct Effect *effect;
+};
+
 struct City {
   char *name;
   uint32_t population;
@@ -119,12 +129,18 @@ struct City {
   // TODO: Ensure order independence of the execution of effects
   struct Effect *effects;
   size_t num_effects;
+  // Construction projects available
+  struct ConstructionProject *construction_projects;
+  size_t num_construction_projects;
+  // Constructions raised and still standing
+  struct ConstructionProject *constructions;
+  size_t num_constructions;
 };
 
 #define FOREVER -1
 struct Effect {
   void *resrc;      // Ptr to the resource affected
-  int64_t duration; // Negative for forever
+  int64_t duration; // Negative for forever, 0 = done/inactive
   void (*tick_effect)(struct Effect *effect);
 };
 
@@ -171,6 +187,15 @@ void pops_population_tick_effect(struct Effect *effect) {
   c->emmigrations = maxf(c->emmigrations - (int)c->emmigrations, 0.0f);
 }
 
+void building_maintenance_tick_effect(struct Effect *effect) {
+  assert(effect);
+  assert(effect->resrc);
+  struct City *c = (struct City *)effect->resrc;
+  for (size_t i = 0; i < c->num_constructions; i++) {
+    c->gold -= c->constructions[i].maintenance;
+  }
+}
+
 // TODO: Expand this to a decision tree and then a story in which you either
 // fail or get the choice of moving the capital of the Roman Empire to your city
 // or move to Rome and then the game turns in a slow downward turn into decline?
@@ -181,6 +206,7 @@ void imperator_demands_money(struct Effect *effect) {
   if (timestep % 100 != 0) {
     return;
   }
+  return;
   struct City *c = (struct City *)effect->resrc;
   const float x = rand() / (float)RAND_MAX;
   if (x < 1.0f) {
@@ -213,6 +239,49 @@ void imperator_demands_money(struct Effect *effect) {
   }
 }
 
+void build_construction(struct City *c, struct ConstructionProject *cp) {
+  // Check if cost is meet
+}
+
+void construction_menu(struct City *c) {
+  const int h = 10;
+  const int w = 40;
+  WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
+  mvwprintw(win, 1, 1, "[ESC] \t Constructions \t \n");
+  nodelay(win, false); /* Make getch non-blocking */
+
+  uint32_t selector = 0;
+  bool done = false;
+  while (!done) {
+    uint32_t offset = 0;
+    for (size_t i = 0; i < c->num_construction_projects; i++) {
+      mvclrprintw(win, 10 + i + offset, 1, "%s",
+                  c->construction_projects[i].name_str);
+      if (i == selector && false) {
+        offset = 1;
+        mvclrprintw(win, 10 + i + offset, 1, "%s",
+                    c->construction_projects[i].description_str);
+      }
+    }
+
+    switch (wgetch(win)) {
+    case KEY_DOWN:
+      selector -= (selector - 1) % c->num_construction_projects;
+      break;
+    case KEY_UP:
+      selector += (selector + 1) % c->num_construction_projects;
+      break;
+    case KEY_ENTER:
+      build_construction(c, &c->construction_projects[selector]);
+      break;
+    case KEY_ESCAPE:
+      done = true;
+      break;
+    }
+  }
+  destroy_win(win);
+}
+
 /// Apply and deal with the effects in place on the city
 void next_timestep(struct City *c) {
   for (size_t i = 0; i < c->num_effects; i++) {
@@ -233,7 +302,7 @@ void next_timestep(struct City *c) {
 /// Display vital numbers in the user interface
 void update_ui(const struct City *c) {
   assert(c);
-  
+
   date.day = (timestep / 24) % get_days_in_month(date);
   mvclrprintw(root, 0, 0, "Colonia %s", c->name);
   mvclrprintw(root, 1, 0, "%s, day %u of %s, hour %u, %s",
@@ -278,6 +347,22 @@ int main() {
   city.emmigrationrate = 0.001f;
   city.immigrationrate = 0.00205f;
 
+  struct Effect aqueduct_effect;
+
+  struct ConstructionProject aqueduct = {
+      .cost = 10,
+      .maintenance = 2,
+      .name_str = "Aqueduct",
+      .description_str = "Provides fresh water for the city. Required for "
+                         "baths among other things.",
+      .effect = &aqueduct_effect};
+
+  city.num_construction_projects = 1;
+  city.construction_projects = calloc(city.num_construction_projects,
+                                      sizeof(struct ConstructionProject));
+
+  city.construction_projects[0] = aqueduct;
+
   struct Effect farm = {.resrc = &city.food, .duration = FOREVER};
   farm.tick_effect = farm_tick_effect;
 
@@ -290,13 +375,17 @@ int main() {
   struct Effect emperor_gold_demands = {.resrc = &city, .duration = FOREVER};
   emperor_gold_demands.tick_effect = imperator_demands_money;
 
-  city.num_effects = 4;
+  struct Effect building_maintenance = {.resrc = &city, .duration = FOREVER};
+  building_maintenance.tick_effect = building_maintenance_tick_effect;
+
+  city.num_effects = 5;
   city.effects = calloc(city.num_effects, sizeof(struct Effect));
 
   city.effects[0] = farm;
   city.effects[1] = pops;
   city.effects[2] = food_eating;
   city.effects[3] = emperor_gold_demands;
+  city.effects[4] = building_maintenance;
 
   bool quit = false;
   char ch = 0;
@@ -351,8 +440,18 @@ int main() {
     case ' ':
       simulation_speed = 0;
       break;
+    case 'h':
+      // help_menu(); // TODO
+      break;
     case 'q':
+      // quit_menu(); // TODO: Save state, load menu
       return 0;
+    case 'c':
+      construction_menu(&city);
+      break;
+    case 'p':
+      // policy_menu();
+      break;
     }
 
     update_ui(&city);
