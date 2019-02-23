@@ -176,10 +176,10 @@ void pops_population_tick_effect(struct Effect *effect) {
   c->deaths += c->deathrate * c->population;
   c->emmigrations += c->emmigrationrate * c->population;
   c->population += c->births + c->immigrations - c->deaths - c->emmigrations;
-  mvclrprintw(root, 10, 0, "Births: %f", c->births);
-  mvclrprintw(root, 11, 0, "Deaths: %f", c->deaths);
-  mvclrprintw(root, 12, 0, "Immigrations: %f", c->immigrations);
-  mvclrprintw(root, 13, 0, "Emmigrations: %f", c->emmigrations);
+  mvclrprintw(root, 10, 0, "Births: %i", (int)c->births);
+  mvclrprintw(root, 11, 0, "Deaths: %i", (int)c->deaths);
+  mvclrprintw(root, 12, 0, "Immigrations: %i", (int)c->immigrations);
+  mvclrprintw(root, 13, 0, "Emmigrations: %i", (int)c->emmigrations);
   // Accumulate the remainder to the next timestep
   c->births = maxf(c->births - (int)c->births, 0.0f);
   c->deaths = maxf(c->deaths - (int)c->deaths, 0.0f);
@@ -248,7 +248,6 @@ void construction_menu(struct City *c) {
   const int w = 40;
   WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
   mvwprintw(win, 1, 1, "[ESC] \t Constructions \t \n");
-  nodelay(win, false); /* Make getch non-blocking */
 
   uint32_t selector = 0;
   bool done = false;
@@ -266,10 +265,16 @@ void construction_menu(struct City *c) {
 
     switch (wgetch(win)) {
     case KEY_DOWN:
-      selector -= (selector - 1) % c->num_construction_projects;
+      if (selector == c->num_construction_projects - 1) {
+        break;
+      }
+      selector = (selector + 1) % c->num_construction_projects;
       break;
     case KEY_UP:
-      selector += (selector + 1) % c->num_construction_projects;
+      if (selector == 0) {
+        break;
+      }
+      selector = (selector - 1) % c->num_construction_projects;
       break;
     case KEY_ENTER:
       build_construction(c, &c->construction_projects[selector]);
@@ -356,6 +361,10 @@ int main() {
       .description_str = "Provides fresh water for the city. Required for "
                          "baths among other things.",
       .effect = &aqueduct_effect};
+
+  // TODO: Coin mint - gold revenue
+  // TODO: Farms dont produce food in the winter - need to import
+  // TODO: Different farms (export fruits/etc to other parts of the empire)
 
   city.num_construction_projects = 1;
   city.construction_projects = calloc(city.num_construction_projects,
