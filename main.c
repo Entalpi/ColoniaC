@@ -251,7 +251,7 @@ void construction_menu(struct City *c) {
   const int w = 40;
   WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
   keypad(win, true); /* For keyboard arrows 	*/
-  mvwprintw(win, 1, 1, "[ESC] \t Constructions \n");
+  mvwprintw(win, 1, 1, "[Q] \t Constructions \n");
 
   uint32_t selector = 0;
   bool done = false;
