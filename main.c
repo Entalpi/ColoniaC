@@ -31,6 +31,7 @@ static inline float maxi(const uint32_t a, const uint32_t b) {
 
 static WINDOW *root = NULL; // FIXME: ...
 
+// NOTE: Julian calendar introduced Jan. 1st of 45 BC
 struct Date {
   uint32_t day;
   uint32_t month;
@@ -39,7 +40,7 @@ struct Date {
 
 static struct Date date;
 
-static inline const char *get_month_str(struct Date date) {
+static inline const char *get_month_str(const struct Date date) {
   assert(date.month <= 11 && date.month >= 0);
   static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
                                      "Aprilis",   "Maius",      "Iunius",
@@ -48,11 +49,25 @@ static inline const char *get_month_str(struct Date date) {
   return month_strs[date.month];
 }
 
-static inline uint32_t get_days_in_month(struct Date date) {
+static inline uint32_t get_days_in_month(const struct Date date) {
   assert(date.month <= 11 && date.month >= 0);
   static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
                                         31, 31, 30, 31, 30, 31};
   return month_lngs[date.month];
+}
+
+static inline void increment_date(struct Date* date) {
+  if (date->day + 1 == get_days_in_month(*date)) {
+    date->month++;
+    date->day = 0;
+  } else {
+    date->day += 1;
+  }
+
+  if (date->month == 12) {
+    date->year++;
+    date->month = 0;
+  }
 }
 
 /***** ncurses utility functions *****/
@@ -96,15 +111,33 @@ static inline uint32_t ms_per_timestep_for(const uint32_t speed) {
   }
 }
 
-const char *get_year_str(const uint64_t timestep) {
-  // TODO: Implement time system
+const char *get_year_str(const struct Date* date) {
+  // TODO: Implement time system for the consuls
   // Need to store some consuls names and generate the sequences dynamically
   return "Year of CON III Grassius & CON I Octavian";
 }
 
-const char *get_season_str(const uint64_t timestep) {
-  // TODO: Implement
-  return "winter";
+const char *get_season_str(const struct Date* date) {
+  switch (date->month) {
+  case 0: return "winter";
+  case 1: return "winter";
+  case 2: return "winter";
+  case 3: return "spring";
+  case 4: return "spring";
+  case 5: return "summer";
+  case 6: return "summer";
+  case 7: return "summer";
+  case 8: return "summer";
+  case 9: return "autumn";
+  case 10: return "autumn";
+  case 11: return "winter";
+  case 12: return "winter";
+  }
+  return "";
+}
+
+static inline bool is_winter(const struct Date* date) {
+  return "winter" == get_season_str(date);
 }
 
 struct Construction {
@@ -158,18 +191,56 @@ struct Effect {
   void (*tick_effect)(const struct City* c, struct City* c1);
 };
 
+/// Apply and deal with the effects in place on the city
+void simulate_next_timestep(const struct City *c, struct City* c1) {
+  memset(c1, 0, sizeof(struct City)); // Reset next state
+
+  c1->name = c->name;
+  c1->num_effects = c->num_effects;
+  c1->effects = c->effects;
+  c1->num_construction_projects = c->num_construction_projects;
+  c1->construction_projects = c->construction_projects;
+  c1->num_constructions = c->num_constructions;
+  c1->constructions = c->constructions;
+
+  for (size_t i = 0; i < c1->num_effects; i++) {
+    c1->effects[i].tick_effect(c, c1);
+    if (c1->effects[i].duration == FOREVER) {
+      continue;
+    }
+
+    c1->effects[i].duration--;
+    if (c1->effects[i].duration == 0) {
+      c1->effects[i] = c1->effects[c1->num_effects - 1];
+      c1->num_effects--;
+      i--;
+    }
+  }
+
+  for (size_t i = 0; i < c1->num_constructions; i++) {
+    c1->constructions[i].effect->tick_effect(c, c1);
+  }
+
+  // Compute changes based on current state
+  c1->gold = c->gold - c->gold_usage;
+
+  timestep++;
+  increment_date(&date);
+}
+
 void pops_population_tick_effect(const struct City* c, struct City* c1) {
   assert(c); assert(c1);
   // TODO: Formula for population growth depending on food/etc in Roman times
   // TODO: Uniform random value:
   // https://codereview.stackexchange.com/questions/159604/uniform-random-numbers-in-an-integer-interval-in-c
-  // Accumulate the remainder to the next timestep
-  c1->births = maxf(c->births - (int)c->births, 0.0f);
-  c1->deaths = maxf(c->deaths - (int)c->deaths, 0.0f);
-  c1->immigrations = maxf(c->immigrations - (int)c->immigrations, 0.0f);
-  c1->emmigrations = maxf(c->emmigrations - (int)c->emmigrations, 0.0f);
-  c1->births = c->birthrate * c->population;
+  c1->birthrate = c->birthrate;
+  c1->deathrate = c->deathrate;
+  c1->immigrationrate = c->immigrationrate;
+  c1->emmigrationrate = c->emmigrationrate;
+
+  // BEID model
   c1->immigrations = c->immigrationrate * c->population;
+  c1->births = c->birthrate * c->population;
   c1->deaths = c->deathrate * c->population;
   c1->emmigrations = c->emmigrationrate * c->population;
   c1->population = c->population + c->births + c->immigrations - c->deaths - c->emmigrations;
@@ -184,6 +255,7 @@ void building_maintenance_tick_effect(const struct City* c, struct City* c1) {
 
 void farm_tick_effect(const struct City* c, struct City* c1) {
   assert(c); assert(c1);
+  if (is_winter(&date)) { return; }
   c1->food_production += 1;
 }
 
@@ -304,56 +376,21 @@ bool quit_menu(struct City *c) {
 }
 
 void policy_menu(struct City *c) {
-  // TODO: Implement
+  // TODO: Implement policy menu
 }
 
 void help_menu(struct City *c) {
-  // TODO: Implement
-}
-
-/// Apply and deal with the effects in place on the city
-void simulate_next_timestep(const struct City *c, struct City* c1) {
-  c1->name = c->name;
-  c1->num_effects = c->num_effects;
-  c1->effects = c->effects;
-  c1->num_construction_projects = c->num_construction_projects;
-  c1->construction_projects = c->construction_projects;
-  c1->num_constructions = c->num_constructions;
-  c1->constructions = c->constructions;
-
-  for (size_t i = 0; i < c1->num_effects; i++) {
-    c1->effects[i].tick_effect(c, c1);
-    if (c1->effects[i].duration == FOREVER) {
-      continue;
-    }
-
-    c1->effects[i].duration--;
-    if (c1->effects[i].duration == 0) {
-      c1->effects[i] = c1->effects[c1->num_effects - 1];
-      c1->num_effects--;
-      i--;
-    }
-  }
-
-  for (size_t i = 0; i < c1->num_constructions; i++) {
-    c1->constructions[i].effect->tick_effect(c, c1);
-  }
-
-  // Compute changes based on current state
-  c1->gold = c->gold - c->gold_usage;
-
-  timestep++;
+  // TODO: Implement help menu
 }
 
 /// Display vital numbers in the user interface
 void update_ui(const struct City *c) {
   assert(c);
   int row = 0;
-  date.day = (timestep / 24) % get_days_in_month(date);
   mvclrprintw(root, row++, 0, "%s", c->name);
-  mvclrprintw(root, row++, 0, "%s, day %u of %s, hour %u, %s",
-              get_year_str(timestep), date.day, get_month_str(date),
-              timestep % 24, get_season_str(timestep));
+  mvclrprintw(root, row++, 0, "%s, day %u of %s, %s",
+              get_year_str(&date), date.day, get_month_str(date),
+              get_season_str(&date));
 
   row += 1;
   mvclrprintw(root, row++, 0, "EFFECTS");
@@ -416,12 +453,10 @@ int main() {
 
   struct City* city = &cities[0];
   city->name = "Eboracum";
-  city->food_production = 0;
-  city->food_usage = 0;
   city->gold = 100;
   city->population = 300;
-  city->birthrate = 0.001f;
-  city->deathrate = 0.002f;
+  city->birthrate = 0.015f;
+  city->deathrate = 0.014f;
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
 
@@ -439,13 +474,13 @@ int main() {
   farm_construction_effect.tick_effect = farm_tick_effect;
 
   struct Construction farm = {.cost = 2,
-                              .maintenance = 1,
+                              .maintenance = 0,
                               .name_str = "Farm",
                               .description_str = "Piece of land that produces food.",
                               .effect = &farm_construction_effect};
 
   // TODO: Coin mint - gold revenue
-  // TODO: Farms dont produce food in the winter - need to import
+  // TODO: Farms dont produce food in the winter - need to import and thus decrease gold
   // TODO: Different farms (export fruits/etc to other parts of the empire)
 
   city->num_construction_projects = 2;
@@ -501,12 +536,10 @@ int main() {
     dt = ((t1.tv_sec * 1000) + (t1.tv_usec / 1000)) -
          ((t0.tv_sec * 1000) + (t0.tv_usec / 1000));
 
-    // TODO: Pass the delta rest onto next timestep
     const uint32_t ms_per_timestep = ms_per_timestep_for(simulation_speed);
     if (dt >= ms_per_timestep && ms_per_timestep != 0) {
-      memset(&cities[(cidx + 1) % 2], 0, sizeof(struct City)); // Reset next state
       simulate_next_timestep(&cities[cidx], &cities[(cidx + 1) % 2]);
-      cidx += (cidx + 1) % 2;
+      cidx = (cidx + 1) % 2;
       t0 = t1;
     }
 
