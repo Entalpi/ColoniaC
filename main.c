@@ -22,53 +22,11 @@
 #define C_KEY_ENTER 10
 #define C_KEY_ESCAPE 27
 
-// TODO: Refactor into math.h?
-static inline float maxf(const float a, const float b) { return a < b ? b : a; }
-
-static inline float maxi(const uint32_t a, const uint32_t b) {
-  return a < b ? b : a;
-}
-
-static WINDOW *root = NULL; // FIXME: ...
-
-// NOTE: Julian calendar introduced Jan. 1st of 45 BC
-struct Date {
-  uint32_t day;
-  uint32_t month;
-  uint32_t year;
-};
-
-static struct Date date;
-
-static inline const char *get_month_str(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
-  static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
-                                     "Aprilis",   "Maius",      "Iunius",
-                                     "Iulius",    "Augustus",   "September",
-                                     "October",   "November",   "December"};
-  return month_strs[date.month];
-}
-
-static inline uint32_t get_days_in_month(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
-  static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
-                                        31, 31, 30, 31, 30, 31};
-  return month_lngs[date.month];
-}
-
-static inline void increment_date(struct Date* date) {
-  if (date->day + 1 == get_days_in_month(*date)) {
-    date->month++;
-    date->day = 0;
-  } else {
-    date->day += 1;
-  }
-
-  if (date->month == 12) {
-    date->year++;
-    date->month = 0;
-  }
-}
+// Language definitions
+#define WINTER "winter"
+#define SPRING "spring"
+#define SUMMER "summer"
+#define AUTUMN "autumn"
 
 /***** ncurses utility functions *****/
 /// MVove, CLearR, PRINT Word
@@ -98,6 +56,131 @@ void destroy_win(WINDOW *win) {
   delwin(win);
 }
 
+// TODO: Refactor into math.h?
+static inline float maxf(const float a, const float b) { return a < b ? b : a; }
+
+static inline float maxi(const uint32_t a, const uint32_t b) {
+  return a < b ? b : a;
+}
+
+static WINDOW *root = NULL; // FIXME: ...
+
+// NOTE: Julian calendar introduced Jan. 1st of 45 BC
+struct Date {
+  uint32_t day;
+  uint32_t month;
+  uint32_t year;
+};
+
+// NOTE: Not historically correct in classic Latin times (Kal, a.d VI Non, etc)
+static struct Date date;
+
+// NOTE: Modern Roman numerals (I, V, X, L, C, D, M), (1, 5, 10, 50, 100, 500, 1000)
+// NOTE: Using subtractive notation
+static inline const char* roman_numeral_str(const uint32_t n) {
+  const div_t M = div(n, 1000);
+  const div_t C = div(M.rem, 100);
+  const div_t X = div(C.rem, 10);
+  const div_t I = div(X.rem, 1);
+
+  char Ms[M.quot];
+  for (int32_t i = 0; i < M.quot; i++) {
+    Ms[i] = (char) 'M';
+  }
+
+  char* Cs = NULL;
+  size_t Cs_size = 0;
+  switch (C.quot) {
+  case 1: Cs = "C";    Cs_size = 1; break;
+  case 2: Cs = "CC";   Cs_size = 2; break;
+  case 3: Cs = "CCC";  Cs_size = 3; break;
+  case 4: Cs = "CD";   Cs_size = 2; break;
+  case 5: Cs = "D";    Cs_size = 1; break;
+  case 6: Cs = "DC";   Cs_size = 2; break;
+  case 7: Cs = "DCC";  Cs_size = 3; break;
+  case 8: Cs = "DCCC"; Cs_size = 4; break;
+  case 9: Cs = "CM";   Cs_size = 2; break;
+  }
+
+  char* Xs = NULL;
+  size_t Xs_size = 0;
+  switch (X.quot) {
+  case 1: Xs = "X";    Xs_size = 1; break;
+  case 2: Xs = "XX";   Xs_size = 2; break;
+  case 3: Xs = "XXX";  Xs_size = 3; break;
+  case 4: Xs = "XL";   Xs_size = 2; break;
+  case 5: Xs = "L";    Xs_size = 1; break;
+  case 6: Xs = "LX";   Xs_size = 2; break;
+  case 7: Xs = "LXX";  Xs_size = 3; break;
+  case 8: Xs = "LXXX"; Xs_size = 4; break;
+  case 9: Xs = "XC";   Xs_size = 2; break;
+  }
+
+  char* Is = NULL;
+  size_t Is_size = 0;
+  switch (I.quot) {
+  case 1: Is = "I";    Is_size = 1; break;
+  case 2: Is = "II";   Is_size = 2; break;
+  case 3: Is = "III";  Is_size = 3; break;
+  case 4: Is = "IV";   Is_size = 2; break;
+  case 5: Is = "V";    Is_size = 2; break;
+  case 6: Is = "VI";   Is_size = 2; break;
+  case 7: Is = "VII";  Is_size = 3; break;
+  case 8: Is = "VIII"; Is_size = 4; break;
+  case 9: Is = "IX";   Is_size = 2; break;
+  }
+
+  size_t str_len = M.quot + Cs_size + Xs_size + Is_size;
+  char* str = calloc(str_len + 1, 1);
+
+  size_t p = 0;
+  memcpy(&str[p], Ms, M.quot);
+  p += M.quot;
+
+  memcpy(&str[p], Cs, Cs_size);
+  p += Cs_size;
+
+  memcpy(&str[p], Xs, Xs_size);
+  p += Xs_size;
+
+  memcpy(&str[p], Is, Is_size);
+  p += Is_size;
+
+  p++; str[p] = '\0';
+
+  return str;
+}
+
+static inline const char *get_month_str(const struct Date date) {
+  assert(date.month <= 11 && date.month >= 0);
+  static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
+                                     "Aprilis",   "Maius",      "Iunius",
+                                     "Iulius",    "Augustus",   "September",
+                                     "October",   "November",   "December"};
+  return month_strs[date.month];
+}
+
+static inline uint32_t get_days_in_month(const struct Date date) {
+  assert(date.month <= 11 && date.month >= 0);
+  static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
+                                        31, 31, 30, 31, 30, 31};
+  return month_lngs[date.month];
+}
+
+static inline void increment_date(struct Date* date) {
+  if (date->day + 1 > get_days_in_month(*date) - 1) {
+    date->month++;
+    date->day = 0;
+  } else {
+    date->day += 1;
+  }
+
+  if (date->month == 12) {
+    date->year++;
+    date->month = 0;
+  }
+}
+
 static uint64_t timestep = 0;
 static uint32_t simulation_speed = 1;
 
@@ -119,25 +202,25 @@ const char *get_year_str(const struct Date* date) {
 
 const char *get_season_str(const struct Date* date) {
   switch (date->month) {
-  case 0: return "winter";
-  case 1: return "winter";
-  case 2: return "winter";
-  case 3: return "spring";
-  case 4: return "spring";
-  case 5: return "summer";
-  case 6: return "summer";
-  case 7: return "summer";
-  case 8: return "summer";
-  case 9: return "autumn";
-  case 10: return "autumn";
-  case 11: return "winter";
-  case 12: return "winter";
+  case 0: return WINTER;
+  case 1: return WINTER;
+  case 2: return WINTER;
+  case 3: return SPRING;
+  case 4: return SPRING;
+  case 5: return SUMMER;
+  case 6: return SUMMER;
+  case 7: return SUMMER;
+  case 8: return SUMMER;
+  case 9: return AUTUMN;
+  case 10: return AUTUMN;
+  case 11: return WINTER;
+  case 12: return WINTER;
   }
   return "";
 }
 
 static inline bool is_winter(const struct Date* date) {
-  return "winter" == get_season_str(date);
+  return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
 struct Construction {
@@ -388,8 +471,8 @@ void update_ui(const struct City *c) {
   assert(c);
   int row = 0;
   mvclrprintw(root, row++, 0, "%s", c->name);
-  mvclrprintw(root, row++, 0, "%s, day %u of %s, %s",
-              get_year_str(&date), date.day, get_month_str(date),
+  mvclrprintw(root, row++, 0, "%s, day %s of %s, %s",
+              get_year_str(&date), roman_numeral_str(date.day + 1), get_month_str(date),
               get_season_str(&date));
 
   row += 1;
@@ -415,7 +498,7 @@ void update_ui(const struct City *c) {
   mvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage, c->political_capacity);
   mvclrprintw(root, row++, 0, "Military   power: %u / %u", c->military_usage, c->military_capacity);
   mvclrprintw(root, row++, 0, "Diplomatic power: %u / %u", c->diplomatic_usage, c->diplomatic_capacity);
-  
+
   row += 1;
   mvclrprintw(root, row++, 0, "DEMOGRAPHICS");
   mvclrprintw(root, row++, 0, "Population: %u", c->population);
@@ -482,7 +565,9 @@ int main() {
   // TODO: Coin mint - gold revenue
   // TODO: Farms dont produce food in the winter - need to import and thus decrease gold
   // TODO: Different farms (export fruits/etc to other parts of the empire)
-
+  // TODO: Select export/domestic consumption for each farm
+  // TODO: Land area limited - increased by political power expendicture via events
+  // TODO: Farms should have areas and thus dependent on area for production output
   city->num_construction_projects = 2;
   city->construction_projects = calloc(city->num_construction_projects,
                                       sizeof(struct Construction));
