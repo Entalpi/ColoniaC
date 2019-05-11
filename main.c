@@ -568,6 +568,9 @@ int main() {
   // TODO: Select export/domestic consumption for each farm
   // TODO: Land area limited - increased by political power expendicture via events
   // TODO: Farms should have areas and thus dependent on area for production output
+  // TODO: Farms can have different crops: wheat, oats, rye,
+  // TODO: Bakeries & Grinding mills
+  // TODO: Diary productions - oxygala (ancient form of yoghurt), 
   city->num_construction_projects = 2;
   city->construction_projects = calloc(city->num_construction_projects,
                                       sizeof(struct Construction));
