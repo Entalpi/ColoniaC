@@ -12,8 +12,6 @@
 // Event: "Our scouts report that barbarians are gathering under the cmd of
 // <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
 // spoiling? Food production should vary with seasons
-// Tax collection should be simulated by trying to model how they collected
-// taxes in the early Roman Empire.
 
 #define C_KEY_DOWN 258
 #define C_KEY_UP 259
@@ -77,6 +75,7 @@ static struct Date date;
 
 // NOTE: Modern Roman numerals (I, V, X, L, C, D, M), (1, 5, 10, 50, 100, 500, 1000)
 // NOTE: Using subtractive notation
+// API: Callee-responsible for freeing the returned pointer
 static inline const char* roman_numeral_str(const uint32_t n) {
   const div_t M = div(n, 1000);
   const div_t C = div(M.rem, 100);
@@ -568,9 +567,14 @@ int main() {
   // TODO: Select export/domestic consumption for each farm
   // TODO: Land area limited - increased by political power expendicture via events
   // TODO: Farms should have areas and thus dependent on area for production output
-  // TODO: Farms can have different crops: wheat, oats, rye,
+  // TODO: Farms can have different crops: wheat, oats, rye, wine!
   // TODO: Bakeries & Grinding mills
-  // TODO: Diary productions - oxygala (ancient form of yoghurt), 
+  // TODO: Diary productions - oxygala (ancient form of yoghurt),
+  // TODO: Send lobbyists to Rome to argue for different laws (lex), or even vote in plebiscites?
+  // Ex) Lex Canuleia ()
+  // TODO: Denarius instead of gold
+  // TODO: Publicans (tax auction for tax collectors)
+
   city->num_construction_projects = 2;
   city->construction_projects = calloc(city->num_construction_projects,
                                       sizeof(struct Construction));
