@@ -453,6 +453,8 @@ void construction_menu(struct City *c) {
 }
 
 bool quit_menu(struct City *c) {
+  // TODO: Export City state to JSON
+  // TODO: Load City state from JSON
   // TODO: Quit & Save, Save, Restart, Quit
   return true;
 }
