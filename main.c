@@ -8,6 +8,9 @@
 #include <time.h>
 #include <string.h>
 
+// NOTE: Used for development
+#define DEBUG
+
 // TODO: Add an event log
 // Event: "Our scouts report that barbarians are gathering under the cmd of
 // <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
@@ -37,6 +40,12 @@ static inline void mvclrprintw(WINDOW *win, int y, int x, const char *fmt,
   vwprintw(win, fmt, args);
 }
 
+static inline void mvclrprint(WINDOW* win, int y, int x, const char *str) {
+  wmove(win, y, x);
+  wclrtoeol(win);
+  mvaddstr(y, x, str);
+}
+
 // Allocs a new window and sets a box around it plus displays it
 WINDOW *create_newwin(const int height, const int width, const int starty,
                       const int startx) {
@@ -57,8 +66,10 @@ void destroy_win(WINDOW *win) {
 // TODO: Refactor into math.h?
 static inline float maxf(const float a, const float b) { return a < b ? b : a; }
 
-static inline float maxi(const uint32_t a, const uint32_t b) {
-  return a < b ? b : a;
+static inline float maxi(const uint32_t a, const uint32_t b) { return a < b ? b : a; }
+
+static inline size_t uni_randu(const size_t to) {
+  return rand() % to;
 }
 
 static WINDOW *root = NULL; // FIXME: ...
@@ -184,19 +195,41 @@ static uint64_t timestep = 0;
 static uint32_t simulation_speed = 1;
 
 static inline uint32_t ms_per_timestep_for(const uint32_t speed) {
-  assert(speed >= 0);
-  switch (speed) {
-  case 0:
-    return 0;
-  default:
-    return maxi(500 - 50 * speed, 50);
-  }
+  if (speed == 0) { return 0; }
+  #ifdef DEBUG
+  return (1000.0f / (2.0f * (float) speed));
+  #else
+  return (1000.0f / (float) speed);
+  #endif
 }
 
+// NOTE: Callee resonsible for freeing string returned
 const char *get_year_str(const struct Date* date) {
-  // TODO: Implement time system for the consuls
-  // Need to store some consuls names and generate the sequences dynamically
-  return "Year of CON III Grassius & CON I Octavian";
+  // TODO: Consuls Date generation
+  return "Year of Cornelius Lentulus CON II & M. Porcius Cato CON I";
+  /*
+  static const char* consuls_str[] = { "P. Sulpicius Galba Maximus", "C. Aurelius Cotta",
+                                       "L. Cornelius Lentulus", "P.Villius Tappulus",
+                                       "T. Quinctius Flamininus", "Sex. Aelius Paetus Catus",
+                                       "C. Cornelius Cethegus", "Q. Minucius Rufus",
+                                       "L. Furius Purpureo", "M. Claudius Marcellus",
+                                       "L. Valerius Flaccus", "M. Porcius Cato"
+  };
+  static const uint32_t NUM_CONSULS = sizeof(consuls_str) / sizeof(char*);
+  static uint8_t consuls_cnt[sizeof(consuls_str) / sizeof(char*)] = {0};
+  size_t c0 = uni_randu(NUM_CONSULS);
+  size_t c1 = uni_randu(NUM_CONSULS);
+  consuls_cnt[c0]++;
+  consuls_cnt[c1]++;
+  char* str = (char*) calloc(128, 1);
+  const char* s0 = consuls_str[c0];
+  const char* s1 = consuls_str[c1];
+  const char* n0 = roman_numeral_str(consuls_cnt[c0]);
+  const char* n1 = roman_numeral_str(consuls_cnt[c1]);
+  sprintf(str, "Year of %s CON %s & %s CON %s ", s0, n0, s1, n1);
+  free((void*)n0); free((void*)n1);
+  return str;
+  */
 }
 
 const char *get_season_str(const struct Date* date) {
@@ -225,17 +258,17 @@ static inline bool is_winter(const struct Date* date) {
 struct Construction {
   char* name_str;
   char* description_str;
-  uint32_t cost;
-  uint32_t maintenance;
+  float cost;
+  float maintenance;
   struct Effect *effect;
 };
 
 struct City {
   char *name;
-  int32_t food_production;
-  int32_t food_usage;       // Higher usage than production means importation
-  int32_t gold;             // Pounds of gold (kg??) (negative, debt??)
-  int32_t gold_usage;       // Income / Lose
+  float food_production;
+  float food_usage;       // Higher usage than production means importation
+  float gold;             // Pounds of gold (kg??) (negative, debt??)
+  float gold_usage;       // Income / Lose
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -244,7 +277,7 @@ struct City {
   uint32_t military_capacity;
   uint32_t military_usage;
   /// Demographics
-  uint32_t population;
+  float population;
   float birthrate;       // Births / 1'000 pops / timestep
   float births;          // Accumulated from previous timesteps
   float deathrate;       // Deaths / 1'000 pops / timestep
@@ -256,6 +289,7 @@ struct City {
   /// Effects
   struct Effect *effects;
   size_t num_effects;
+  size_t num_effects_capacity;
   // Construction projects available
   struct Construction *construction_projects;
   size_t num_construction_projects;
@@ -265,13 +299,41 @@ struct City {
 };
 
 #define FOREVER -1
-// TODO: When human readable string are null the effect is hidden?
+// NOTE: When human readable string are null the effect is hidden?
 struct Effect {
   char *name_str;         // Human readable name of the effect
   char *description_str;  // Human readable description of the effect
   int64_t duration; // Negative for forever, 0 = done/inactive
   void (*tick_effect)(const struct City* c, struct City* c1);
 };
+
+
+void city_add_effect(struct City* c, const struct Effect e) {
+  if (c->num_effects + 1 > c->num_effects_capacity) {
+    struct Effect* effects = calloc(c->num_effects + 10, sizeof(struct Effect));
+    memcpy(effects, c->effects, sizeof(struct Effect) * c->num_effects);
+    free(c->effects);
+    c->effects = effects;
+  }
+  c->effects[c->num_effects++] = e;
+}
+
+/// Calculates the population changes this timestep
+void population_calculation(const struct City* c, struct City* c1) {
+  assert(c); assert(c1);
+  // TODO: Formula for population growth depending on food/etc in Roman times
+  c1->birthrate += c->birthrate;
+  c1->deathrate += c->deathrate;
+  c1->immigrationrate += c->immigrationrate;
+  c1->emmigrationrate += c->emmigrationrate;
+
+  // BEID model
+  c1->immigrations += c->immigrationrate * c->population;
+  c1->births = c->birthrate * c->population;
+  c1->deaths = c->deathrate * c->population;
+  c1->emmigrations = c->emmigrationrate * c->population;
+  c1->population = c->population + c->births + c->immigrations - c->deaths - c->emmigrations;
+}
 
 /// Apply and deal with the effects in place on the city
 void simulate_next_timestep(const struct City *c, struct City* c1) {
@@ -285,6 +347,7 @@ void simulate_next_timestep(const struct City *c, struct City* c1) {
   c1->num_constructions = c->num_constructions;
   c1->constructions = c->constructions;
 
+  // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
     c1->effects[i].tick_effect(c, c1);
     if (c1->effects[i].duration == FOREVER) {
@@ -303,29 +366,14 @@ void simulate_next_timestep(const struct City *c, struct City* c1) {
     c1->constructions[i].effect->tick_effect(c, c1);
   }
 
+  // Compute changes during this timestep
+  population_calculation(c, c1);
+
   // Compute changes based on current state
-  c1->gold = c->gold - c->gold_usage;
+  c1->gold = c->gold - c1->gold_usage;
 
   timestep++;
   increment_date(&date);
-}
-
-void pops_population_tick_effect(const struct City* c, struct City* c1) {
-  assert(c); assert(c1);
-  // TODO: Formula for population growth depending on food/etc in Roman times
-  // TODO: Uniform random value:
-  // https://codereview.stackexchange.com/questions/159604/uniform-random-numbers-in-an-integer-interval-in-c
-  c1->birthrate = c->birthrate;
-  c1->deathrate = c->deathrate;
-  c1->immigrationrate = c->immigrationrate;
-  c1->emmigrationrate = c->emmigrationrate;
-
-  // BEID model
-  c1->immigrations = c->immigrationrate * c->population;
-  c1->births = c->birthrate * c->population;
-  c1->deaths = c->deathrate * c->population;
-  c1->emmigrations = c->emmigrationrate * c->population;
-  c1->population = c->population + c->births + c->immigrations - c->deaths - c->emmigrations;
 }
 
 void building_maintenance_tick_effect(const struct City* c, struct City* c1) {
@@ -338,14 +386,19 @@ void building_maintenance_tick_effect(const struct City* c, struct City* c1) {
 void farm_tick_effect(const struct City* c, struct City* c1) {
   assert(c); assert(c1);
   if (is_winter(&date)) { return; }
-  c1->food_production += 1;
+  c1->food_production += 0.1f;
+}
+
+void aqueduct_tick_effect(const struct City* c, struct City* c1) {
+  assert(c); assert(c1);
+  c1->diplomatic_capacity += 1;
+  c1->immigrationrate += 0.000001f;
 }
 
 void pops_eating_tick_effect(const struct City* c, struct City* c1) {
   assert(c); assert(c1);
   const uint32_t consumption = c->population * 0.001f;
   c1->food_usage += consumption;
-  mvclrprintw(root, 0, 30, "%u", consumption);
 }
 
 void colonia_capacity_tick_effect(const struct City* c, struct City* c1) {
@@ -378,14 +431,14 @@ void imperator_demands_money(const struct City* c, struct City* c1) {
         mvwprintw(win, 1, 1,
                   "Emperor <EMPEROR-NAME> is satisfied and his opinion of you "
                   "has been elevated");
-        c1->gold -= 50;
+        c1->gold -= 50.0f;
         break;
       }
       if (ch == 'n') {
         mvwprintw(win, 1, 1,
                   "Emperor <EMPEROR-NAME> recalls some of <LEGIO-NAME> from "
                   "<CITY-NAME>");
-        c1->population -= 50;
+        c1->population -= 50.0f;
         break;
       }
     }
@@ -394,34 +447,40 @@ void imperator_demands_money(const struct City* c, struct City* c1) {
 }
 
 bool build_construction(struct City *c, struct Construction *cp) {
-  if (c->gold <= 0) {
+  if (c->gold <= 0.0f) {
     return false;
   }
-  if ((uint32_t) c->gold >= cp->cost) {
+  if (c->gold >= cp->cost) {
     c->gold -= cp->cost;
-    c->effects[c->num_effects++] = *cp->effect;
+    city_add_effect(c, *cp->effect);
     return true;
   }
   return false;
 }
 
 void construction_menu(struct City *c) {
-  const int h = 10;
-  const int w = 40;
+  const int h = 4 * c->num_construction_projects;
+  const int w = 60;
   WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
   keypad(win, true); /* For keyboard arrows 	*/
-  mvwprintw(win, 1, 1, "[Q] \t Constructions \n");
+  mvwprintw(win, 1, 1, "[Q]");
+  mvwprintw(win, 1, 4, "\t Constructions \n");
 
   uint32_t selector = 0;
   bool done = false;
   while (!done) {
     uint32_t offset = 0;
     uint32_t s = 2;
+
     for (size_t i = 0; i < c->num_construction_projects; i++) {
-      mvclrprintw(win, s + i + offset, 1, "%s - cost %u gold",
+      if (i == selector) {
+        wattron(win, A_REVERSE);
+      }
+      mvclrprintw(win, s + i + offset, 1, "%s (%.0f gold)",
                   c->construction_projects[i].name_str,
                   c->construction_projects[i].cost);
       if (i == selector) {
+        wattroff(win, A_REVERSE);
         offset = 1;
         mvclrprintw(win, s + i + offset, 1, "%s",
                     c->construction_projects[i].description_str);
@@ -442,7 +501,10 @@ void construction_menu(struct City *c) {
       selector--;
       break;
     case C_KEY_ENTER:
-      build_construction(c, &c->construction_projects[selector]);
+      done = build_construction(c, &c->construction_projects[selector]);
+      if (done) {
+        wclear(root);
+      }
       break;
     case 'q':
       done = true;
@@ -492,8 +554,10 @@ void update_ui(const struct City *c) {
 
   row += 1;
   mvclrprintw(root, row++, 0, "RESOURCES");
-  mvclrprintw(root, row++, 0, "Gold (change %i): %i kg", c->gold_usage, c->gold);
-  mvclrprintw(root, row++, 0, "Food: %i kcal", c->food_production - c->food_usage);
+  mvclrprintw(root, row++, 0, "Gold (change: %'2.f): %1.f kg", c->gold_usage, c->gold);
+  mvclrprintw(root, row++, 0, "Food consumption: %'.1f kcal", c->food_production - c->food_usage);
+  if (c->food_production - c->food_usage > 0.0f) { mvclrprint(root, row++, 0, "EXPORTING FOOD"); }
+  else { mvclrprint(root, row++, 0, "IMPORTING FOOD"); }
 
   row += 1;
   mvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage, c->political_capacity);
@@ -502,12 +566,12 @@ void update_ui(const struct City *c) {
 
   row += 1;
   mvclrprintw(root, row++, 0, "DEMOGRAPHICS");
-  mvclrprintw(root, row++, 0, "Population: %u", c->population);
+  mvclrprintw(root, row++, 0, "Population: %'.0f", c->population);
   // TODO: Subtotal - military abled man X (of which Y are available due to various reasons)
-  mvclrprintw(root, row++, 0, "Births: %i", (int)c->births);
-  mvclrprintw(root, row++, 0, "Deaths: %i", (int)c->deaths);
-  mvclrprintw(root, row++, 0, "Immigrations: %i", (int)c->immigrations);
-  mvclrprintw(root, row++, 0, "Emmigrations: %i", (int)c->emmigrations);
+  mvclrprintw(root, row++, 0, "Births: %'.1f / day", c->births);
+  mvclrprintw(root, row++, 0, "Deaths: %'.1f / day", c->deaths);
+  mvclrprintw(root, row++, 0, "Immigrations: %'.1f / day", c->immigrations);
+  mvclrprintw(root, row++, 0, "Emmigrations: %'.1f / day", c->emmigrations);
 
   // TODO: Implement controls and menu system
   mvclrprintw(root, LINES - 1, 0,
@@ -537,30 +601,33 @@ int main() {
 
   struct City* city = &cities[0];
   city->name = "Eboracum";
-  city->gold = 100;
-  city->population = 300;
-  city->birthrate = 0.015f;
-  city->deathrate = 0.014f;
+  city->gold = 100.0f;
+  city->population = 300.0f;
+  city->birthrate = 0.00021f;
+  city->deathrate = 0.0002f;
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
 
-  struct Effect aqueduct_construction_effect;
+  struct Effect aqueduct_construction_effect = {.name_str = "Aqueduct",
+                                                .description_str = "Provides drinking water and bathing water",
+                                                .duration = FOREVER};
+  aqueduct_construction_effect.tick_effect = aqueduct_tick_effect;
 
   struct Construction aqueduct = {.name_str = "Aqueduct",
-                                  .description_str = "Provides fresh water for the city. Required for baths among other things.",
-                                  .cost = 25,
-                                  .maintenance = 10,
+                                  .description_str = "Provides fresh water for the city.",
+                                  .cost = 25.0f,
+                                  .maintenance = 1.0f,
                                   .effect = &aqueduct_construction_effect};
 
   struct Effect farm_construction_effect = {.name_str = "Farm",
-                                            .description_str = "Piece of land that produces food.",
+                                            .description_str = ", piece of land that produces",
                                             .duration = FOREVER};
   farm_construction_effect.tick_effect = farm_tick_effect;
 
-  struct Construction farm = {.cost = 2,
-                              .maintenance = 0,
+  struct Construction farm = {.cost = 2.0f,
+                              .maintenance = 0.0f,
                               .name_str = "Farm",
-                              .description_str = "Piece of land that produces food.",
+                              .description_str = "Piece of land, can produce various crops.",
                               .effect = &farm_construction_effect};
 
   // TODO: Coin mint - gold revenue
@@ -574,7 +641,7 @@ int main() {
   // TODO: Diary productions - oxygala (ancient form of yoghurt),
   // TODO: Send lobbyists to Rome to argue for different laws (lex), or even vote in plebiscites?
   // Ex) Lex Canuleia ()
-  // TODO: Denarius instead of gold
+  // TODO: Denarius (silver coinage) instead of gold
   // TODO: Publicans (tax auction for tax collectors)
 
   city->num_construction_projects = 2;
@@ -593,9 +660,6 @@ int main() {
   struct Effect pops_food_eating = {.duration = FOREVER};
   pops_food_eating.tick_effect = pops_eating_tick_effect;
 
-  struct Effect pops_simulation = {.duration = FOREVER};
-  pops_simulation.tick_effect = pops_population_tick_effect;
-
   struct Effect emperor_gold_demands = {.duration = FOREVER};
   emperor_gold_demands.tick_effect = imperator_demands_money;
 
@@ -607,14 +671,12 @@ int main() {
   colonia_capacity.description_str = "Established colonia.";
   colonia_capacity.tick_effect = colonia_capacity_tick_effect;
 
-  city->num_effects = 5;
-  city->effects = calloc(city->num_effects, sizeof(struct Effect));
+  city->effects = calloc(5, sizeof(struct Effect));
 
-  city->effects[0] = pops_simulation;
-  city->effects[1] = pops_food_eating;
-  city->effects[2] = emperor_gold_demands;
-  city->effects[3] = building_maintenance;
-  city->effects[4] = colonia_capacity;
+  city->effects[city->num_effects++] = pops_food_eating;
+  city->effects[city->num_effects++] = emperor_gold_demands;
+  city->effects[city->num_effects++] = building_maintenance;
+  city->effects[city->num_effects++] = colonia_capacity;
 
   bool quit = false;
   char ch = 0;
@@ -637,10 +699,15 @@ int main() {
       t0 = t1;
     }
 
+    update_ui(&cities[cidx]);
+
     // TODO: Mnemionc keybindings (E for effects, D for Dempgraphics, H for help, C counstruction, P policy, S for summary (main screen))
     // Input
     ch = getch();
     switch (ch) {
+    case '0':
+      simulation_speed = 0;
+      break;
     case '1':
       simulation_speed = 1;
       break;
@@ -686,8 +753,6 @@ int main() {
       policy_menu(&cities[cidx]);
       break;
     }
-
-    update_ui(&cities[cidx]);
   }
   return 0;
 }
