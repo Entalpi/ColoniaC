@@ -358,6 +358,7 @@ struct Construction {
   float cost;
   float maintenance;
   struct Effect *effect;
+  size_t num_effects;  // Construction variants
 };
 
 struct City {
@@ -517,6 +518,10 @@ void forum_tick_effect(const struct City *c, struct City *c1) {
 
 void coin_mint_tick_effect(const struct City *c, struct City *c1) {
   c1->gold_usage -= 0.5f;
+}
+
+void temple_of_jupiter_tick_effect(const struct City* c, struct City* c1) {
+  // TODO: Temple of Jupiter tick effect
 }
 
 void pops_eating_tick_effect(const struct City *c, struct City *c1) {
@@ -733,7 +738,6 @@ int main() {
   nodelay(root, true);  /* Make getch non-blocking */
   refresh();
 
-  // Default city
   struct City *cities = (struct City *)calloc(2, sizeof(struct City));
 
   struct City *city = &cities[0];
@@ -789,7 +793,7 @@ int main() {
                                              .duration = FOREVER,
                                              .tick_effect = forum_tick_effect};
 
-  struct Construction forum = {.cost = 25.0f,
+  struct Construction forum = {.cost = 50.0f,
                                .maintenance = 2.5f,
                                .name_str = "Forum",
                                .description_str = "Public space for commerce",
@@ -809,6 +813,26 @@ int main() {
                                        "Coin mint for production of coinage",
                                    .effect = &coin_mint_construction_effect};
 
+  struct Effect temple_construction_effect = {.name = "Temple of Jupiter",
+                                              .description_str = "Located at the north-face of the Forum",
+                                              .duration = FOREVER,
+                                              .tick_effect = temple_of_jupiter_tick_effect};
+
+  const size_t num_temples = 2;
+  struct Effect* temple_effects = (struct Effect*) calloc(num_temples, sizeof(struct Effect));
+
+  // TODO: Temple of Mars etc each with their own cost and perks
+
+  struct Construction temple_construction = {.name_str = "Temple to various Roman deities",
+                                             .description_str = "Used in for sacrifies and other roman traditions",
+                                             .cost = 0.0f,
+                                             .maintenance = 0.0f,
+                                             .effect = &temple_effects,
+                                             .num_effects = num_temples};
+
+  // TODO: Temple construction
+  // TODO: Roman bath construction
+  // TODO: Roman amphitheater
   // TODO: Coin mint - gold revenue
   // TODO: Farms dont produce food in the winter - need to import and thus
   // decrease gold
@@ -816,7 +840,7 @@ int main() {
   // TODO: Select export/domestic consumption for each farm
   // TODO: Land area limited - increased by political power expendicture via
   // events
-  // TODO: Farms should have areas and thus dependent on area for production
+  // TODO: Farms should have areas with different costs and thus dependent on area for production
   // output
   // TODO: Farms can have different crops: wheat, oats, rye, wine!
   // TODO: Bakeries & Grinding mills
