@@ -391,6 +391,7 @@ struct City {
   // Construction projects available
   struct Construction *construction_projects;
   size_t num_construction_projects;
+  size_t num_construction_projects_capacity;
   // Constructions raised and still standing
   struct Construction *constructions;
   size_t num_constructions;
@@ -424,6 +425,16 @@ void city_add_construction(struct City* c, const struct Construction con) {
     c->constructions = cons;
   }
   c->constructions[c->num_constructions++] = con;
+}
+
+void city_add_construction_project(struct City* c, const struct Construction con) {
+  if (c->num_construction_projects + 1 > c->num_construction_projects_capacity) {
+    struct Construction* cons = calloc(c->num_construction_projects_capacity + 10, sizeof(struct Construction));
+    memcpy(cons, c->construction_projects, sizeof(struct Construction) * c->num_construction_projects);
+    free(c->construction_projects);
+    c->construction_projects = cons;
+  }
+  c->construction_projects[c->num_construction_projects++] = con;
 }
 
 /// Calculates the population changes this timestep
@@ -813,23 +824,25 @@ int main() {
                                        "Coin mint for production of coinage",
                                    .effect = &coin_mint_construction_effect};
 
-  struct Effect temple_construction_effect = {.name = "Temple of Jupiter",
+  const size_t num_temples = 1;
+  struct Effect* temple_effects = (struct Effect*) calloc(num_temples, sizeof(struct Effect));
+
+  struct Effect temple_of_jupiter_construction_effect = {.name_str = "Temple of Jupiter",
                                               .description_str = "Located at the north-face of the Forum",
                                               .duration = FOREVER,
                                               .tick_effect = temple_of_jupiter_tick_effect};
 
-  const size_t num_temples = 2;
-  struct Effect* temple_effects = (struct Effect*) calloc(num_temples, sizeof(struct Effect));
+  temple_effects[0] = temple_of_jupiter_construction_effect;
 
-  // TODO: Temple of Mars etc each with their own cost and perks
-
-  struct Construction temple_construction = {.name_str = "Temple to various Roman deities",
+  struct Construction temple = {.name_str = "Temple to various Roman deities",
                                              .description_str = "Used in for sacrifies and other roman traditions",
                                              .cost = 0.0f,
                                              .maintenance = 0.0f,
                                              .effect = &temple_effects,
                                              .num_effects = num_temples};
 
+  // TODO: Temple of Mars etc each with their own cost and perks
+  // TODO: Roman castrum (military camp)
   // TODO: Temple construction
   // TODO: Roman bath construction
   // TODO: Roman amphitheater
@@ -851,15 +864,12 @@ int main() {
   // TODO: Publicans (tax auction for tax collectors)
   // TODO: Policies - land tax, 
 
-  city->num_construction_projects = 5;
-  city->construction_projects =
-      calloc(city->num_construction_projects, sizeof(struct Construction));
-
-  city->construction_projects[0] = aqueduct;
-  city->construction_projects[1] = farm;
-  city->construction_projects[2] = basilica;
-  city->construction_projects[3] = forum;
-  city->construction_projects[4] = coin_mint;
+  city_add_construction_project(city, aqueduct);
+  city_add_construction_project(city, farm);
+  city_add_construction_project(city, basilica);
+  city_add_construction_project(city, forum);
+  city_add_construction_project(city, coin_mint);
+  city_add_construction_project(city, temple);
 
   city_add_construction(city, farm);
   city_add_construction(city, farm);
