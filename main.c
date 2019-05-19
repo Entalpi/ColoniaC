@@ -838,7 +838,7 @@ int main() {
                                              .description_str = "Used in for sacrifies and other roman traditions",
                                              .cost = 0.0f,
                                              .maintenance = 0.0f,
-                                             .effect = &temple_effects,
+                                             .effect = temple_effects,
                                              .num_effects = num_temples};
 
   // TODO: Temple of Mars etc each with their own cost and perks
