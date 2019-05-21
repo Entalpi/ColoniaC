@@ -366,6 +366,12 @@ static inline bool is_winter(const struct Date *date) {
   return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
+struct Policy {
+  const char* name_str;
+  const char* description_str;
+  struct Effect* effect;
+};
+
 struct Construction {
   const char *name_str;
   const char *description_str;
@@ -410,6 +416,10 @@ struct City {
   struct Construction *constructions;
   size_t num_constructions;
   size_t num_constructions_capacity;
+  // Policies
+  struct Construction* policies;
+  size_t num_policies;
+  size_t num_polciies_capacity;
 };
 
 #define FOREVER -1
@@ -424,10 +434,8 @@ struct Effect {
 // TODO: Use realloc instead
 struct Effect *city_add_effect(struct City *c, const struct Effect e) {
   if (c->num_effects + 1 > c->num_effects_capacity) {
-    struct Effect *effects = calloc(c->num_effects + 10, sizeof(struct Effect));
-    memcpy(effects, c->effects, sizeof(struct Effect) * c->num_effects);
-    free(c->effects);
-    c->effects = effects;
+    c->num_effects_capacity += 10;
+    c->effects = realloc(c->effects, sizeof(struct Effect) * c->num_effects_capacity);
   }
   c->effects[c->num_effects++] = e;
   return &c->effects[c->num_effects - 1];
@@ -436,12 +444,8 @@ struct Effect *city_add_effect(struct City *c, const struct Effect e) {
 struct Construction *city_add_construction(struct City *c,
                                            const struct Construction con) {
   if (c->num_constructions + 1 > c->num_constructions_capacity) {
-    struct Construction *cons =
-        calloc(c->num_constructions + 10, sizeof(struct Construction));
-    memcpy(cons, c->constructions,
-           sizeof(struct Construction) * c->num_constructions);
-    free(c->constructions);
-    c->constructions = cons;
+    c->num_constructions_capacity += 10;
+    c->constructions = realloc(c->constructions, sizeof(struct Construction) * c->num_constructions_capacity);
   }
   c->constructions[c->num_constructions++] = con;
   return &c->constructions[c->num_constructions - 1];
@@ -451,13 +455,8 @@ struct Construction *
 city_add_construction_project(struct City *c, const struct Construction con) {
   if (c->num_construction_projects + 1 >
       c->num_construction_projects_capacity) {
-    struct Construction *cons =
-        calloc(c->num_construction_projects_capacity + 10,
-               sizeof(struct Construction));
-    memcpy(cons, c->construction_projects,
-           sizeof(struct Construction) * c->num_construction_projects);
-    free(c->construction_projects);
-    c->construction_projects = cons;
+    c->num_construction_projects_capacity += 10;
+    c->construction_projects = realloc(c->construction_projects, sizeof(struct Construction) * c->num_construction_projects_capacity);
   }
   c->construction_projects[c->num_construction_projects++] = con;
   return &c->construction_projects[c->num_construction_projects - 1];
