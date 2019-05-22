@@ -65,8 +65,7 @@ static inline void wmvprintw(WINDOW *win, int y, int x, const char *fmt, ...) {
 // Allocs a new window and sets a box around it plus displays it
 WINDOW *create_newwin(const int height, const int width, const int starty,
                       const int startx) {
-  WINDOW *local_win;
-  local_win = newwin(height, width, starty, startx);
+  WINDOW *local_win = newwin(height, width, starty, startx);
   box(local_win, 0, 0);
   wrefresh(local_win);
   return local_win;
@@ -519,7 +518,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
     if (c1->effects[i].duration == 0) {
       c1->effects[i] = c1->effects[c1->num_effects - 1];
       c1->num_effects--;
-      i--;
+      if (i > 0){i--;}
     }
   }
 
