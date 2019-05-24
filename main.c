@@ -656,6 +656,9 @@ void building_tick_effect(struct Effect *e, const struct City *c,
   if (e->duration == 1) {
     arg->maintained = true;
     arg->construction_finished = true;
+    for (size_t i = 0; i < arg->num_effects; i++) {
+      city_add_effect(c1, arg->effect[i]);
+    }
   }
 }
 
@@ -802,7 +805,7 @@ void update_ui(const struct City *c) {
 
   // TODO: Merge effects from constructions with effects
   row += 1;
-  wmvclrprintw(root, row++, 0, "EFFECTS");
+  wmvclrprintw(root, row++, 0, "[1] EFFECTS [+]");
   for (size_t i = 0; i < c->num_effects; i++) {
     if (c->effects[i].name_str) {
       wmvclrprintw(root, row++, 0, "%s: %s", c->effects[i].name_str,
@@ -811,7 +814,7 @@ void update_ui(const struct City *c) {
   }
 
   row += 1;
-  wmvclrprintw(root, row++, 0, "CONSTRUCTIONS");
+  wmvclrprintw(root, row++, 0, "[2] CONSTRUCTIONS [+]");
   for (size_t i = 0; i < c->num_constructions; i++) {
     struct Construction *con = &c->constructions[i];
     if (!con->construction_finished) {
@@ -827,8 +830,8 @@ void update_ui(const struct City *c) {
   }
 
   row += 1;
-  wmvclrprintw(root, row++, 0, "RESOURCES");
-  wmvclrprintw(root, row++, 0, "Gold (%'2.f): %2.f kg", c->gold_usage, c->gold);
+  wmvclrprintw(root, row++, 0, "[3] RESOURCES [+]");
+  wmvclrprintw(root, row++, 0, "Gold (%'.2f): %.2f kg", c->gold_usage, c->gold);
   wmvclrprintw(root, row++, 0, "Food consumption: %'.1f kcal",
                c->food_production - c->food_usage);
   if (c->food_production - c->food_usage > 0.0f) {
@@ -846,9 +849,9 @@ void update_ui(const struct City *c) {
                c->diplomatic_capacity);
 
   row += 1;
-  wmvclrprintw(root, row++, 0, "DEMOGRAPHICS");
+  wmvclrprintw(root, row++, 0, "[4] DEMOGRAPHICS [+]");
   wmvclrprintw(root, row++, 0, "Population: %'.0f", c->population);
-  // TODO: Subtotal - military abled man X (of which Y are available due to
+  // TODO: Subtotal - military abled men X (of which Y are available due to
   // various reasons)
   wmvclrprintw(root, row++, 0, "Births: %'.1f / day", c->births);
   wmvclrprintw(root, row++, 0, "Deaths: %'.1f / day", c->deaths);
@@ -902,6 +905,7 @@ int main() {
                                       "Provides fresh water for the city.",
                                   .cost = 25.0f,
                                   .maintenance = 0.25f,
+                                  .construction_time = 6 * 30,
                                   .effect = &aqueduct_construction_effect,
                                   .num_effects = 1};
 
