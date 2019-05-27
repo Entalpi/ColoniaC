@@ -359,6 +359,7 @@ const char *get_season_str(const struct Date *date) {
   case 12:
     return WINTER;
   }
+  assert(false);
   return "";
 }
 
@@ -366,10 +367,20 @@ static inline bool is_winter(const struct Date *date) {
   return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
+enum CapacityType { Political = 0, Military = 1, Civic = 1 };
+
+const char *capacity_str(const enum CapacityType type) {
+  static const char *strs[3] = {"Political", "Military", "Civic"};
+  return strs[type];
+}
+
 struct Policy {
+  enum CapacityType type;
+  uint8_t cost;
   const char *name_str;
   const char *description_str;
   struct Effect *effect;
+  size_t num_effects;
 };
 
 struct Construction {
@@ -377,8 +388,7 @@ struct Construction {
   bool maintained;
   const char *name_str;
   const char *description_str;
-  float
-      construction_cost; // Cost in gold per timestep during construction period
+  float construction_cost; // Cost in gold per timestep construction period
   float cost;
   float maintenance;
   struct Effect *effect;
@@ -422,9 +432,10 @@ struct City {
   size_t num_constructions;
   size_t num_constructions_capacity;
   // Policies
-  struct Construction *policies;
+  bool policies_enabled;
+  struct Policy *policies;
   size_t num_policies;
-  size_t num_polciies_capacity;
+  size_t num_policies_capacity;
 };
 
 #define FOREVER -1
@@ -437,7 +448,7 @@ struct Effect {
   void (*tick_effect)(struct Effect *e, const struct City *c, struct City *c1);
 };
 
-// TODO: Use realloc instead
+/// NOTE: All city_add_* functions returns a ptr to the last element added
 struct Effect *city_add_effect(struct City *c, const struct Effect e) {
   if (c->num_effects + 1 > c->num_effects_capacity) {
     c->num_effects_capacity += 10;
@@ -471,6 +482,16 @@ city_add_construction_project(struct City *c, const struct Construction con) {
   }
   c->construction_projects[c->num_construction_projects++] = con;
   return &c->construction_projects[c->num_construction_projects - 1];
+}
+
+struct Policy *city_add_policy(struct City *c, const struct Policy p) {
+  if (c->num_policies + 1 > c->num_policies_capacity) {
+    c->num_policies_capacity += 10;
+    c->policies =
+        realloc(c->policies, sizeof(struct Policy) * c->num_policies_capacity);
+  }
+  c->policies[c->num_policies_capacity++] = p;
+  return &c->policies[c->num_construction_projects_capacity - 1];
 }
 
 /// Calculates the population changes this timestep
@@ -518,7 +539,9 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
     if (c1->effects[i].duration == 0) {
       c1->effects[i] = c1->effects[c1->num_effects - 1];
       c1->num_effects--;
-      if (i > 0){i--;}
+      if (i > 0) {
+        i--;
+      }
     }
   }
 
@@ -591,8 +614,6 @@ void temple_of_mars_tick_effect(struct Effect *e, const struct City *c,
 
 void pops_eating_tick_effect(struct Effect *e, const struct City *c,
                              struct City *c1) {
-  assert(c);
-  assert(c1);
   const uint32_t consumption = c->population * 0.001f;
   c1->food_usage += consumption;
 }
@@ -601,6 +622,20 @@ void colonia_capacity_tick_effect(struct Effect *e, const struct City *c,
                                   struct City *c1) {
   static uint8_t lvl = 1;
   c1->political_capacity += 1;
+}
+
+void twelve_tables_tick_effect(struct Effect *e, const struct City *c,
+                               struct City *c1) {
+  c1->policies_enabled = true;
+  c1->diplomatic_capacity += 2;
+  c1->political_capacity += 2;
+}
+
+void land_tax_tick_effect(struct Effect *e, const struct City *c,
+                          struct City *c1) {
+  // TODO: Calculate total farm area
+  const float tax_percentage = *((float *)e->arg);
+  c1->gold_usage -= 5.0f * tax_percentage; // TODO: Gold income perhaps ... ?
 }
 
 // TODO: Expand this to a decision tree and then a story in which you either
@@ -650,8 +685,10 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   c1->gold -= arg->construction_cost; // FIXME: Gold usage instead?
 
-  // TODO: String in struct Effect must be free'd after Effect is done by simulate_..timestep
-  sprintf(e->description_str, "%llu days left, costing %.2f / day", e->duration, arg->construction_cost);
+  // TODO: String in struct Effect must be free'd after Effect is done by
+  // simulate_..timestep
+  sprintf(e->description_str, "%llu days left, costing %.2f / day", e->duration,
+          arg->construction_cost);
 
   if (e->duration == 1) {
     arg->maintained = true;
@@ -677,7 +714,7 @@ bool build_construction(struct City *c, struct Construction cp,
     char *name_str = calloc(1, 64);
     sprintf(name_str, "Building %s", cp.name_str);
 
-    char *description_str = calloc(1, 64);
+    char *description_str = calloc(1, 64); // Filled by the building_tick_effect
 
     struct Effect building_effect = {.name_str = name_str,
                                      .description_str = description_str,
@@ -693,12 +730,13 @@ bool build_construction(struct City *c, struct Construction cp,
 }
 
 void construction_menu(struct City *c) {
-  const int h = 4 * c->num_construction_projects;
+  const int h = 4 + c->num_construction_projects;
   const int w = 60;
   WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
   keypad(win, true); /* For keyboard arrows 	*/
   mvwprintw(win, 1, 1, "[Q]");
-  mvwprintw(win, 1, 4, "\t Constructions \n");
+  const char *str = "Constructions";
+  mvwprintw(win, 1, w / 2 - strlen(str) / 2, str);
 
   uint8_t hselector = 0;
   uint8_t selector = 0;
@@ -787,7 +825,87 @@ bool quit_menu(struct City *c) {
 }
 
 void policy_menu(struct City *c) {
-  // TODO: Implement policy menu
+  const int h = 2 + c->num_policies;
+  const int w = 60;
+  WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
+  keypad(win, true); /* For keyboard arrows 	*/
+  mvwprintw(win, 1, 1, "[Q]");
+  const char *str = "Policies";
+  mvwprintw(win, 1, w / 2 - strlen(str) / 2, str);
+
+  uint8_t hselector = 0;
+  uint8_t selector = 0;
+  bool done = false;
+  while (!done) {
+    uint32_t offset = 0;
+    uint32_t s = 2;
+
+    for (size_t i = 0; i < c->num_policies; i++) {
+      if (i == selector) {
+        wattron(win, A_REVERSE);
+      }
+
+      if (i == selector && c->policies[i].num_effects > 0) {
+        wmvclrprintw(win, s + i + offset, 1, "[%s]: %s (%u cost)",
+                     capacity_str(c->policies[i].type),
+                     c->policies[i].effect[hselector].name_str,
+                     c->policies[i].cost);
+
+        const uint8_t hinset = w - 7;
+        wmvprintw(win, s + i + offset, hinset, "%u / %u", hselector + 1,
+                  c->policies[i].num_effects);
+      } else {
+        wmvclrprintw(win, s + i + offset, 1, "%s (%u cost)",
+                     c->policies[i].effect[0].name_str, c->policies[i].cost);
+      }
+
+      if (i == selector) {
+        wattroff(win, A_REVERSE);
+        offset = 1;
+        wmvclrprintw(win, s + i + offset, 1, "%s",
+                     c->policies[i].description_str);
+      }
+    }
+
+    switch (wgetch(win)) {
+    case C_KEY_DOWN:
+      hselector = 0;
+      if (selector >= c->num_policies - 1) {
+        break;
+      }
+      selector++;
+      break;
+    case C_KEY_UP:
+      hselector = 0;
+      if (selector <= 0) {
+        break;
+      }
+      selector--;
+      break;
+    case C_KEY_ENTER:
+      // done = implement_policy(c->policies[i].effects[hselector])
+      if (done) {
+        wclear(root);
+      }
+      break;
+    case C_KEY_LEFT:
+      if (hselector == 0) {
+        break;
+      }
+      hselector--;
+      break;
+    case C_KEY_RIGHT:
+      if (hselector == c->policies[selector].num_effects - 1) {
+        break;
+      }
+      hselector++;
+      break;
+    case 'q':
+      done = true;
+      break;
+    }
+  }
+  destroy_win(win);
 }
 
 void help_menu(struct City *c) {
@@ -998,6 +1116,21 @@ int main() {
       .effect = temple_effects,
       .num_effects = num_temples};
 
+  struct Effect twelve_tables_construction_effect = {
+      .name_str = "The Twelve Tables",
+      .description_str = "Foundation stone of Roman law and traditions",
+      .duration = FOREVER,
+      .tick_effect = twelve_tables_tick_effect};
+
+  struct Construction twelve_tables = {
+      .name_str = "The Twelve Tables",
+      .description_str = "Foundation stone of Roman law and traditions",
+      .cost = 50.0f,
+      .maintenance = 0.05f,
+      .construction_time = 30,
+      .effect = &twelve_tables_construction_effect,
+      .num_effects = 1};
+
   // TODO: Roman castrum (military camp)
   // TODO: Roman bath construction
   // TODO: Roman amphitheater
@@ -1006,8 +1139,8 @@ int main() {
   // decrease gold
   // TODO: Different farms (export fruits/etc to other parts of the empire)
   // TODO: Select export/domestic consumption for each farm
-  // TODO: Land area limited - increased by political power expendicture via
-  // events
+  // TODO: Land area limited - increased by political power expenditure by
+  // sending lobbyists to Rome? Over a period of time 
   // TODO: Farms should have areas with different costs and thus dependent on
   // area for production output
   // TODO: Farms can have different crops: wheat, oats, rye, wine!
@@ -1017,8 +1150,8 @@ int main() {
   // vote in plebiscites? Ex) Lex Canuleia ()
   // TODO: Denarius (silver coinage) instead of gold
   // TODO: Publicans (tax auction for tax collectors)
-  // TODO: Policies - land tax,
 
+  city_add_construction_project(city, twelve_tables);
   city_add_construction_project(city, aqueduct);
   city_add_construction_project(city, farm);
   city_add_construction_project(city, basilica);
@@ -1047,6 +1180,20 @@ int main() {
   city_add_effect(city, emperor_gold_demands);
   city_add_effect(city, building_maintenance);
   city_add_effect(city, colonia_capacity);
+
+  /// Policies
+  struct Effect land_tax_effect = {.duration = FOREVER};
+  land_tax_effect.tick_effect = land_tax_tick_effect;
+
+  struct Policy land_tax;
+  land_tax.name_str = "Enact land tax";
+  land_tax.description_str = "Places a tax on owning land.";
+  land_tax.cost = 1;
+  land_tax.type = Political;
+  land_tax.effect = &land_tax_effect;
+  land_tax.num_effects = 1;
+
+  city_add_policy(city, land_tax);
 
   bool quit = false;
   char ch = 0;
