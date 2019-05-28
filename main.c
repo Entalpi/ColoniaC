@@ -374,6 +374,18 @@ const char *capacity_str(const enum CapacityType type) {
   return strs[type];
 }
 
+enum FarmProduceType { Grapes = 0, Wheat = 1 };
+
+const char* farm_produce_str(const enum FarmProduceType type) {
+  static const char* strs[2] = {"Grapes", "Wheat"};
+  return strs[type];
+}
+
+struct FarmArgument {
+  size_t area; // Area in 
+  enum FarmProduceType produce;
+};
+
 struct Policy {
   enum CapacityType type;
   uint8_t cost;
@@ -402,6 +414,7 @@ struct City {
   float food_usage; // Higher usage than production means importation
   float gold;       // Pounds of gold (kg??) (negative, debt??)
   float gold_usage; // Income / Lose
+  size_t land_area; // Land area available (used by farms, mansio, castrum)
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -1027,11 +1040,16 @@ int main() {
                                   .effect = &aqueduct_construction_effect,
                                   .num_effects = 1};
 
-  struct Effect farm_construction_effect = {
+  struct FarmArgument grape_farm_arg = {.produce = Grapes, .area = 0};
+
+  struct Effect grape_farm_construction_effect = {
       .name_str = "Farm",
-      .description_str = "piece of land that produces XXX",
+      .description_str = "piece of land that produces",
       .duration = FOREVER,
+      .arg = &grape_farm_arg,
       .tick_effect = farm_tick_effect};
+
+  struct Effect farm_construction_effects[2] = { grape_farm_construction_effect };
 
   struct Construction farm = {
       .cost = 2.0f,
@@ -1039,8 +1057,8 @@ int main() {
       .maintenance = 0.0f,
       .name_str = "Farm",
       .description_str = "Piece of land that can produce various crops.",
-      .effect = &farm_construction_effect,
-      .num_effects = 1};
+      .effect = farm_construction_effects,
+      .num_effects = 2};
 
   struct Effect basilica_construction_effect = {
       .name_str = "Basilica",
@@ -1131,7 +1149,7 @@ int main() {
       .effect = &twelve_tables_construction_effect,
       .num_effects = 1};
 
-  // TODO: Roman castrum (military camp)
+  // TODO: Roman castrum (inc. military power, population boost, excepts more services, inc. gold)
   // TODO: Roman bath construction
   // TODO: Roman amphitheater
   // TODO: Coin mint - gold revenue
@@ -1140,7 +1158,7 @@ int main() {
   // TODO: Different farms (export fruits/etc to other parts of the empire)
   // TODO: Select export/domestic consumption for each farm
   // TODO: Land area limited - increased by political power expenditure by
-  // sending lobbyists to Rome? Over a period of time 
+  // sending lobbyists to Rome? Over a period of time.
   // TODO: Farms should have areas with different costs and thus dependent on
   // area for production output
   // TODO: Farms can have different crops: wheat, oats, rye, wine!
@@ -1150,6 +1168,7 @@ int main() {
   // vote in plebiscites? Ex) Lex Canuleia ()
   // TODO: Denarius (silver coinage) instead of gold
   // TODO: Publicans (tax auction for tax collectors)
+  // TODO: Mansio (inc. political power, consumes area, upkeep)
 
   city_add_construction_project(city, twelve_tables);
   city_add_construction_project(city, aqueduct);
