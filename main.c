@@ -376,13 +376,13 @@ const char *capacity_str(const enum CapacityType type) {
 
 enum FarmProduceType { Grapes = 0, Wheat = 1 };
 
-const char* farm_produce_str(const enum FarmProduceType type) {
-  static const char* strs[2] = {"Grapes", "Wheat"};
+const char *farm_produce_str(const enum FarmProduceType type) {
+  static const char *strs[2] = {"Grapes", "Wheat"};
   return strs[type];
 }
 
 struct FarmArgument {
-  size_t area; // Area in 
+  size_t area; // Area in
   enum FarmProduceType produce;
 };
 
@@ -411,10 +411,11 @@ struct Construction {
 struct City {
   char *name;
   float food_production;
-  float food_usage; // Higher usage than production means importation
-  float gold;       // Pounds of gold (kg??) (negative, debt??)
-  float gold_usage; // Income / Lose
-  size_t land_area; // Land area available (used by farms, mansio, castrum)
+  float food_usage;      // Higher usage than production means importation
+  float gold;            // Pounds of gold (kg??) (negative, debt??)
+  float gold_usage;      // Income / Lose
+  size_t land_area;      // Land area available (used by farms, mansio, castrum)
+  size_t land_area_used; // Land used
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -540,6 +541,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->construction_projects = c->construction_projects;
   c1->num_constructions = c->num_constructions;
   c1->constructions = c->constructions;
+  c1->land_area = c->land_area;
 
   // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
@@ -637,11 +639,12 @@ void colonia_capacity_tick_effect(struct Effect *e, const struct City *c,
   c1->political_capacity += 1;
 }
 
-void twelve_tables_tick_effect(struct Effect *e, const struct City *c,
-                               struct City *c1) {
+void senate_house_tick_effect(struct Effect *e, const struct City *c,
+                              struct City *c1) {
   c1->policies_enabled = true;
   c1->diplomatic_capacity += 2;
   c1->political_capacity += 2;
+  c1->gold_usage += 0.2f;
 }
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
@@ -970,6 +973,7 @@ void update_ui(const struct City *c) {
   } else {
     wmvclrprint(root, row++, 0, "IMPORTING FOOD");
   }
+  wmvclrprintw(root, row++, 0, "Land area: %u", c->land_area);
 
   row += 1;
   wmvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage,
@@ -1024,6 +1028,7 @@ int main() {
   city->deathrate = 0.0002f;
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
+  city->land_area = 100;
 
   struct Effect aqueduct_construction_effect = {
       .name_str = "Aqueduct",
@@ -1049,7 +1054,7 @@ int main() {
       .arg = &grape_farm_arg,
       .tick_effect = farm_tick_effect};
 
-  struct Effect farm_construction_effects[2] = { grape_farm_construction_effect };
+  struct Effect farm_construction_effects[2] = {grape_farm_construction_effect};
 
   struct Construction farm = {
       .cost = 2.0f,
@@ -1134,22 +1139,37 @@ int main() {
       .effect = temple_effects,
       .num_effects = num_temples};
 
-  struct Effect twelve_tables_construction_effect = {
-      .name_str = "The Twelve Tables",
-      .description_str = "Foundation stone of Roman law and traditions",
+  struct Effect senate_house_construction_effect = {
+      .name_str = "Senate house",
+      .description_str = "Enables policies to be enacted",
       .duration = FOREVER,
-      .tick_effect = twelve_tables_tick_effect};
+      .tick_effect = senate_house_tick_effect};
 
-  struct Construction twelve_tables = {
-      .name_str = "The Twelve Tables",
-      .description_str = "Foundation stone of Roman law and traditions",
+  struct Construction senate_house = {
+      .name_str = "Senate house",
+      .description_str = "Meeting place of the ruling class",
       .cost = 50.0f,
       .maintenance = 0.05f,
       .construction_time = 30,
-      .effect = &twelve_tables_construction_effect,
+      .effect = &senate_house_construction_effect,
       .num_effects = 1};
 
-  // TODO: Roman castrum (inc. military power, population boost, excepts more services, inc. gold)
+  struct Effect insula_construction_effect;
+  insula_construction_effect.name_str = "Insula";
+  insula_construction_effect.duration = 0;
+  insula_construction_effect.arg = 0;
+
+  struct Construction insula = {.name_str = "Insula",
+                                .description_str =
+                                    "Apartment block with space for ",
+                                .cost = 10.0f,
+                                .maintenance = 0.05f,
+                                .construction_time = 30,
+                                .effect = &insula_construction_effect,
+                                .num_effects = 1};
+
+  // TODO: Roman castrum (inc. military power, population boost, excepts more
+  // services, inc. gold)
   // TODO: Roman bath construction
   // TODO: Roman amphitheater
   // TODO: Coin mint - gold revenue
@@ -1170,7 +1190,8 @@ int main() {
   // TODO: Publicans (tax auction for tax collectors)
   // TODO: Mansio (inc. political power, consumes area, upkeep)
 
-  city_add_construction_project(city, twelve_tables);
+  city_add_construction_project(city, insula);
+  city_add_construction_project(city, senate_house);
   city_add_construction_project(city, aqueduct);
   city_add_construction_project(city, farm);
   city_add_construction_project(city, basilica);
