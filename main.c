@@ -1235,7 +1235,7 @@ int main() {
       t0 = t1;
     }
 
-    wclear(root);
+    werase(root);
     update_ui(&cities[cidx]);
 
     // TODO: Mnemionc keybindings (E for effects, D for Dempgraphics, H for
