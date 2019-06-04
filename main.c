@@ -1168,28 +1168,6 @@ int main() {
                                 .effect = &insula_construction_effect,
                                 .num_effects = 1};
 
-  // TODO: Roman castrum (inc. military power, population boost, excepts more
-  // services, inc. gold)
-  // TODO: Roman bath construction
-  // TODO: Roman amphitheater
-  // TODO: Coin mint - gold revenue
-  // TODO: Farms dont produce food in the winter - need to import and thus
-  // decrease gold
-  // TODO: Different farms (export fruits/etc to other parts of the empire)
-  // TODO: Select export/domestic consumption for each farm
-  // TODO: Land area limited - increased by political power expenditure by
-  // sending lobbyists to Rome? Over a period of time.
-  // TODO: Farms should have areas with different costs and thus dependent on
-  // area for production output
-  // TODO: Farms can have different crops: wheat, oats, rye, wine!
-  // TODO: Bakeries & Grinding mills
-  // TODO: Diary productions - oxygala (ancient form of yoghurt),
-  // TODO: Send lobbyists to Rome to argue for different laws (lex), or even
-  // vote in plebiscites? Ex) Lex Canuleia ()
-  // TODO: Denarius (silver coinage) instead of gold
-  // TODO: Publicans (tax auction for tax collectors)
-  // TODO: Mansio (inc. political power, consumes area, upkeep)
-
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
   city_add_construction_project(city, aqueduct);
