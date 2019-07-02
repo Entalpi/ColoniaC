@@ -506,7 +506,7 @@ struct Policy *city_add_policy(struct City *c, const struct Policy p) {
     c->policies =
         realloc(c->policies, sizeof(struct Policy) * c->num_policies_capacity);
   }
-  c->policies[c->num_policies_capacity++] = p;
+  c->policies[c->num_policies++] = p;
   return &c->policies[c->num_construction_projects_capacity - 1];
 }
 
