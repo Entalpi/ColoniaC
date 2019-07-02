@@ -520,7 +520,7 @@ void population_calculation(const struct City *c, struct City *c1) {
   c1->immigrationrate += c->immigrationrate;
   c1->emmigrationrate += c->emmigrationrate;
 
-  // BEID model
+  // BIDE model
   c1->immigrations += c->immigrationrate * c->population;
   c1->births = c->birthrate * c->population;
   c1->deaths = c->deathrate * c->population;
@@ -705,7 +705,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   // TODO: String in struct Effect must be free'd after Effect is done by
   // simulate_..timestep
-  sprintf(e->description_str, "%llu days left, costing %.2f / day", e->duration,
+  sprintf(e->description_str, "%lu days left, costing %.2f / day", e->duration,
           arg->construction_cost);
 
   if (e->duration == 1) {
@@ -1202,6 +1202,10 @@ int main() {
   city_add_effect(city, colonia_capacity);
 
   /// Policies
+  city->num_policies = 0;
+  city->political_capacity = 10;
+  city->policies = (struct Policy*) calloc(city->num_policies, sizeof(struct Policy));
+
   struct Effect land_tax_effect = {.duration = FOREVER};
   land_tax_effect.tick_effect = land_tax_tick_effect;
 
