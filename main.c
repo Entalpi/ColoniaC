@@ -261,7 +261,7 @@ static inline const char *roman_numeral_str(const uint32_t n) {
 }
 
 static inline const char *get_month_str(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
+  assert(date.month <= 11);
   static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
                                      "Aprilis",   "Maius",      "Iunius",
                                      "Iulius",    "Augustus",   "September",
@@ -270,7 +270,7 @@ static inline const char *get_month_str(const struct Date date) {
 }
 
 static inline uint32_t get_days_in_month(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
+  assert(date.month <= 11);
   static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
                                         31, 31, 30, 31, 30, 31};
   return month_lngs[date.month];
@@ -800,7 +800,7 @@ void construction_menu(struct City *c) {
       break;
     case C_KEY_UP:
       hselector = 0;
-      if (selector <= 0) {
+      if (selector == 0) {
         break;
       }
       selector--;
