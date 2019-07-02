@@ -38,7 +38,8 @@ static inline void wmvclrprintw(WINDOW *win, int y, int x, const char *fmt,
   wclrtoeol(win);
   va_list args;
   va_start(args, fmt);
-  vwprintw(win, fmt, args);
+  vw_printw(win, fmt, args);
+  va_end(args);
 }
 
 /// Window, MoVe, CLearR, PRINT
@@ -59,7 +60,8 @@ static inline void wmvprintw(WINDOW *win, int y, int x, const char *fmt, ...) {
   wmove(win, y, x);
   va_list args;
   va_start(args, fmt);
-  vwprintw(win, fmt, args);
+  vw_printw(win, fmt, args);
+  va_end(args);
 }
 
 // Allocs a new window and sets a box around it plus displays it
