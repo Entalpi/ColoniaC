@@ -7305,6 +7305,7 @@ nk_file_load(const char* path, nk_size* siz, struct nk_allocator *alloc)
         return 0;
 
     fd = fopen(path, "rb");
+    fprintf(stderr, "Error: %u / %s", errno, strerror(errno));
     if (!fd) return 0;
     fseek(fd, 0, SEEK_END);
     ret = ftell(fd);
