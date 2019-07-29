@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <errno.h>
 
 // NOTE: Choice of UI: terminal or GUI based
 #define USER_INTERFACE_GUI
@@ -1089,28 +1090,26 @@ int main() {
   }
 
   // Init Nuklear - GUI
-  if (false) {  struct nk_font_atlas atlas;
-  nk_font_atlas_init_default(&atlas);
-  nk_font_atlas_begin(&atlas);
-  const float FONT_HEIGHT = 13.0f;
-  // const char* FONT_FILEPATH = "~/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
-  // struct nk_font* font = nk_font_atlas_add_from_file(&atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
-  struct nk_font* font = nk_font_atlas_add_default(&atlas, FONT_HEIGHT, NULL);
-  int img_width = 0;
-  int img_height = 0;
-  GLuint font_texture = 0;
-  const void* image = nk_font_atlas_bake(&atlas, &img_width, &img_height, NK_FONT_ATLAS_RGBA32);
-  device_upload_atlas(&font_texture, image, img_width, img_height);
-  struct nk_draw_null_texture nk_null_texture;
-  nk_font_atlas_end(&atlas, nk_handle_id((int)font_texture), &nk_null_texture);
-  }
-
   struct nk_context *ctx = nk_sdl_init(sdl_window);
 
-  /* Load Fonts: loads the default font */
-  struct nk_font_atlas* atlas;
-  nk_sdl_font_stash_begin(&atlas);
-  nk_sdl_font_stash_end();
+  const bool USE_CUSTOM_FONT = true;
+  if (USE_CUSTOM_FONT) {
+    struct nk_font_atlas* atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    const float FONT_HEIGHT = 15.0f;
+    const char* FONT_FILEPATH = "/home/alexander/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
+    struct nk_font* font = nk_font_atlas_add_from_file(atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
+    if (font == NULL) {
+      fprintf(stderr, "Could not load custom font.");
+      return -1;
+    }
+    nk_sdl_font_stash_end();
+    nk_style_set_font(ctx, &font->handle);
+  } else {
+    struct nk_font_atlas* atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    nk_sdl_font_stash_end();
+  }
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
