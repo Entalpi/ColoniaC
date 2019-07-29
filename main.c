@@ -9,6 +9,35 @@
 #include <sys/time.h>
 #include <time.h>
 
+// NOTE: Choice of UI: terminal or GUI based
+#define USER_INTERFACE_GUI
+// #define USER_INTERFACE_TERMINAL
+// TODO: Add warning if none are defined
+
+#ifdef USER_INTERFACE_GUI
+
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#define NK_GLFW_GL4_IMPLEMENTATION
+#define NK_KEYSTATE_BASED_INPUT
+
+#include "nuklear.h"
+#include "nuklear_glfw_gl4.h"
+
+#define MAX_VERTEX_BUFFER 512 * 1024
+#define MAX_ELEMENT_BUFFER 128 * 1024
+
+#endif
+
 // NOTE: Used for development
 #define DEBUG
 
@@ -930,8 +959,8 @@ void help_menu(struct City *c) {
   // TODO: Implement help menu
 }
 
-/// Display vital numbers in the user interface
-void update_ui(const struct City *c) {
+/// Display terminal-based user interface
+void update_tui(const struct City *c) {
   assert(c);
   int row = 0;
   wmvclrprintw(root, row++, 0, "%s", c->name);
@@ -1006,8 +1035,89 @@ void update_ui(const struct City *c) {
   // TODO: Show deltas for the month next to the current values
 }
 
+#ifdef USER_INTERFACE_GUI
+void glfw_error_callback(int e, const char* d) {
+  fprintf(stderr, "Error %d: %s", e, d);
+}
+
+static void device_upload_atlas(GLuint* font_texture, const void *image, int width, int height) {
+  glGenTextures(1, font_texture);
+  glBindTexture(GL_TEXTURE_2D, *font_texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+}
+
+// Display graphical-based user interface (GUI)
+void update_gui(const struct City* c, struct nk_context* ctx) {
+  if (nk_begin(ctx, "Hello world!", nk_rect(50, 50, 200, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
+    nk_layout_row_static(ctx, 30, 80, 1);
+    if (nk_button_label(ctx, "Button")) {
+      printf("TODO more!");
+    }
+  }
+  nk_end(ctx);
+}
+#endif
+
 int main() {
   srand(time(NULL));
+
+#ifdef USER_INTERFACE_GUI
+  // Init GLFW
+  const size_t win_width  = 1280;
+  const size_t win_height = 1080;
+
+  GLFWwindow *glfw_win = NULL;
+  glfwSetErrorCallback(glfw_error_callback);
+  const int glfw_init_status = glfwInit(); 
+  if (glfw_init_status == GLFW_FALSE) {
+    fprintf(stderr, "GLFW could not be initalized.");
+    return -1;
+  }
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+  glfw_win = glfwCreateWindow(win_width, win_height, "GLFW3 Demo", NULL, NULL); 
+  glfwMakeContextCurrent(glfw_win);
+
+  // OpenGL
+  glViewport(0, 0, win_width, win_height);
+  glewExperimental = true;
+  if (glewInit() != GLEW_OK) {
+    fprintf(stderr, "Error could not initalize GLEW \n");
+    return -1;
+  }
+
+  // Init Nuklear - GUI
+  if (false) {  struct nk_font_atlas atlas;
+  nk_font_atlas_init_default(&atlas);
+  nk_font_atlas_begin(&atlas);
+  const float FONT_HEIGHT = 13.0f;
+  // const char* FONT_FILEPATH = "~/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
+  // struct nk_font* font = nk_font_atlas_add_from_file(&atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
+  struct nk_font* font = nk_font_atlas_add_default(&atlas, FONT_HEIGHT, NULL);
+  int img_width = 0;
+  int img_height = 0;
+  GLuint font_texture = 0;
+  const void* image = nk_font_atlas_bake(&atlas, &img_width, &img_height, NK_FONT_ATLAS_RGBA32);
+  device_upload_atlas(&font_texture, image, img_width, img_height);
+  struct nk_draw_null_texture nk_null_texture;
+  nk_font_atlas_end(&atlas, nk_handle_id((int)font_texture), &nk_null_texture);
+  }
+
+  struct nk_context *ctx = nk_glfw3_init(glfw_win, NK_GLFW3_INSTALL_CALLBACKS, MAX_VERTEX_BUFFER, MAX_ELEMENT_BUFFER);
+
+  /* Load Fonts: loads the default font */
+  struct nk_font_atlas* atlas;
+  nk_glfw3_font_stash_begin(&atlas);
+  nk_glfw3_font_stash_end();
+#endif
+
+#ifdef USER_INTERFACE_TERMINAL
   root = initscr(); /* initialize the curses library */
 
   // TODO: Starting screen with cool logotype and load/save, name city screens
@@ -1019,6 +1129,7 @@ int main() {
   noecho();             /* Do not echo out input */
   nodelay(root, true);  /* Make getch non-blocking */
   refresh();
+#endif
 
   struct City *cities = (struct City *)calloc(2, sizeof(struct City));
 
@@ -1240,12 +1351,32 @@ int main() {
       t0 = t1;
     }
 
+    #ifdef USER_INTERFACE_GUI
+    glfwPollEvents();
+    nk_glfw3_new_frame();
+    update_gui(&cities[cidx], ctx);
+    int width = 0; int height = 0;
+    glfwGetWindowSize(glfw_win, &width, &height);
+    glViewport(0, 0, width, height);
+    glClear(GL_COLOR_BUFFER_BIT);
+    // glClearColor(bg.r, bg.g, bg.b, bg.a);
+    /* IMPORTANT: `nk_glfw_render` modifies some global OpenGL state
+     * with blending, scissor, face culling, depth test and viewport and
+     * defaults everything back into a default state.
+     * Make sure to either a.) save and restore or b.) reset your own state after
+     * rendering the UI. */
+    nk_glfw3_render(NK_ANTI_ALIASING_ON);
+    glfwSwapBuffers(glfw_win);
+    #endif
+
+    #ifdef USER_INTERFACE_TERMINAL
     werase(root);
     update_ui(&cities[cidx]);
 
-    // TODO: Mnemionc keybindings (E for effects, D for Dempgraphics, H for
-    // help, C counstruction, P policy, S for summary (main screen)) Input
     ch = getch();
+
+    // TODO: Mnemionc keybindings (E for effects, D for Demographics, H for
+    // help, C counstruction, P policy, S for summary (main screen)) Input
     switch (ch) {
     case '0':
       simulation_speed = 0;
@@ -1295,6 +1426,7 @@ int main() {
       policy_menu(&cities[cidx]);
       break;
     }
+    #endif
   }
   return 0;
 }
