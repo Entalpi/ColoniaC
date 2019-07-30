@@ -8,6 +8,39 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <errno.h>
+
+// NOTE: Choice of UI: terminal or GUI based
+// #define USER_INTERFACE_GUI
+#define USER_INTERFACE_TERMINAL
+// TODO: Add warning if none are defined
+
+#ifdef USER_INTERFACE_GUI
+
+#include <GL/glew.h>
+#include <SDL2/SDL.h>
+
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#define NK_SDL_GL3_IMPLEMENTATION
+#define NK_KEYSTATE_BASED_INPUT
+
+#include "nuklear.h"
+#include "nuklear_sdl_gl3.h"
+
+#define MAX_VERTEX_MEMORY 512 * 1024
+#define MAX_ELEMENT_MEMORY 128 * 1024
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#endif
 
 // NOTE: Used for development
 #define DEBUG
@@ -38,7 +71,8 @@ static inline void wmvclrprintw(WINDOW *win, int y, int x, const char *fmt,
   wclrtoeol(win);
   va_list args;
   va_start(args, fmt);
-  vwprintw(win, fmt, args);
+  vw_printw(win, fmt, args);
+  va_end(args);
 }
 
 /// Window, MoVe, CLearR, PRINT
@@ -59,7 +93,8 @@ static inline void wmvprintw(WINDOW *win, int y, int x, const char *fmt, ...) {
   wmove(win, y, x);
   va_list args;
   va_start(args, fmt);
-  vwprintw(win, fmt, args);
+  vw_printw(win, fmt, args);
+  va_end(args);
 }
 
 // Allocs a new window and sets a box around it plus displays it
@@ -259,7 +294,7 @@ static inline const char *roman_numeral_str(const uint32_t n) {
 }
 
 static inline const char *get_month_str(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
+  assert(date.month <= 11);
   static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
                                      "Aprilis",   "Maius",      "Iunius",
                                      "Iulius",    "Augustus",   "September",
@@ -268,7 +303,7 @@ static inline const char *get_month_str(const struct Date date) {
 }
 
 static inline uint32_t get_days_in_month(const struct Date date) {
-  assert(date.month <= 11 && date.month >= 0);
+  assert(date.month <= 11);
   static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
                                         31, 31, 30, 31, 30, 31};
   return month_lngs[date.month];
@@ -510,7 +545,7 @@ struct Policy *city_add_policy(struct City *c, const struct Policy p) {
     c->policies =
         realloc(c->policies, sizeof(struct Policy) * c->num_policies_capacity);
   }
-  c->policies[c->num_policies_capacity++] = p;
+  c->policies[c->num_policies++] = p;
   return &c->policies[c->num_construction_projects_capacity - 1];
 }
 
@@ -524,7 +559,7 @@ void population_calculation(const struct City *c, struct City *c1) {
   c1->immigrationrate += c->immigrationrate;
   c1->emmigrationrate += c->emmigrationrate;
 
-  // BEID model
+  // BIDE model
   c1->immigrations += c->immigrationrate * c->population;
   c1->births = c->birthrate * c->population;
   c1->deaths = c->deathrate * c->population;
@@ -719,7 +754,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   // TODO: String in struct Effect must be free'd after Effect is done by
   // simulate_..timestep
-  sprintf(e->description_str, "%llu days left, costing %.2f / day", e->duration,
+  sprintf(e->description_str, "%lu days left, costing %.2f / day", e->duration,
           arg->construction_cost);
 
   if (e->duration == 1) {
@@ -814,7 +849,7 @@ void construction_menu(struct City *c) {
       break;
     case C_KEY_UP:
       hselector = 0;
-      if (selector <= 0) {
+      if (selector == 0) {
         break;
       }
       selector--;
@@ -944,8 +979,8 @@ void help_menu(struct City *c) {
   // TODO: Implement help menu
 }
 
-/// Display vital numbers in the user interface
-void update_ui(const struct City *c) {
+/// Display terminal-based user interface
+void update_tui(const struct City *c) {
   assert(c);
   int row = 0;
   wmvclrprintw(root, row++, 0, "%s", c->name);
@@ -1020,19 +1055,123 @@ void update_ui(const struct City *c) {
   // TODO: Show deltas for the month next to the current values
 }
 
-int main() {
+#ifdef USER_INTERFACE_GUI
+void glfw_error_callback(int e, const char* d) {
+  fprintf(stderr, "Error %d: %s", e, d);
+}
+
+struct nk_image nk_image_load(const char* filename) {
+  int x, y, n;
+  GLuint tex;
+  unsigned char* data = stbi_load(filename, &x, &y, &n, 0);
+  if (!data) {
+    fprintf(stderr, "[SDL]: failed to load image: %s", filename);
+  }
+
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+  glGenerateMipmap(GL_TEXTURE_2D);
+  stbi_image_free(data);
+  return nk_image_id((int)tex);
+}
+
+static struct nk_image icon;
+
+// Display graphical-based user interface (GUI)
+void update_gui(const struct City* c, struct nk_context* ctx) {
+  // Main window
+  if (nk_begin(ctx, c->name, nk_rect(50, 50, 400, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE)) {
+    nk_layout_row_static(ctx, 50, 100, 4);
+
+    nk_text(ctx, "Population: 12 312", 10, NK_TEXT_ALIGN_LEFT);
+
+    if (nk_button_label(ctx, "Policies")) {
+      printf("TODO");
+    }
+
+    if (nk_button_label(ctx, "Constructions")) {
+      printf("TODO");
+    }
+
+    if (nk_button_image_label(ctx, icon, "Hello", NK_TEXT_ALIGN_LEFT)) {
+      printf("TODO");
+    }
+
+  }
+  nk_end(ctx);
+}
+#endif
+
+int main(void) {
   srand(time(NULL));
-  root = initscr(); /* initialize the curses library */
 
   // TODO: Starting screen with cool logotype and load/save, name city screens
   // TODO: Add help flag with descriptions
   // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
+
+#ifdef USER_INTERFACE_GUI
+  const size_t WINDOW_WIDTH  = 1280;
+  const size_t WINDOW_HEIGHT = 1080;
+
+  /* SDL setup */
+  SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
+  SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_EVENTS);
+  SDL_GL_SetAttribute (SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+  SDL_GL_SetAttribute (SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_Window* sdl_window = SDL_CreateWindow("ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_GLContext gl_context = SDL_GL_CreateContext(sdl_window);
+  SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
+
+  // OpenGL
+  glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+  glewExperimental = true;
+  if (glewInit() != GLEW_OK) {
+    fprintf(stderr, "Error could not initalize GLEW \n");
+    return -1;
+  }
+
+  // Init Nuklear - GUI
+  struct nk_context *ctx = nk_sdl_init(sdl_window);
+
+  const bool USE_CUSTOM_FONT = true;
+  if (USE_CUSTOM_FONT) {
+    struct nk_font_atlas* atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    const float FONT_HEIGHT = 15.0f;
+    const char* FONT_FILEPATH = "/home/alexander/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
+    struct nk_font* font = nk_font_atlas_add_from_file(atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
+    if (font == NULL) {
+      fprintf(stderr, "Could not load custom font.");
+      return -1;
+    }
+    nk_sdl_font_stash_end();
+    nk_style_set_font(ctx, &font->handle);
+  } else {
+    struct nk_font_atlas* atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    nk_sdl_font_stash_end();
+  }
+
+  icon = nk_image_load("/home/alexander/Desktop/ColoniaC/greek-temple.png");
+#endif
+
+#ifdef USER_INTERFACE_TERMINAL
+  root = initscr(); /* initialize the curses library */
 
   cbreak();             /* Line buffering disabled pass on everything to me*/
   keypad(stdscr, true); /* For keyboard arrows 	*/
   noecho();             /* Do not echo out input */
   nodelay(root, true);  /* Make getch non-blocking */
   refresh();
+#endif
 
   struct City *cities = (struct City *)calloc(2, sizeof(struct City));
 
@@ -1188,29 +1327,6 @@ int main() {
                                 .effect = &insula_construction_effect,
                                 .num_effects = 1};
 
-  // TODO: Roman castrum (inc. military power, population boost, excepts more
-  // services, inc. gold)
-  // TODO: Roman bath construction
-  // TODO: Roman amphitheater
-  // TODO: Coin mint - gold revenue
-  // TODO: Farms dont produce food in the winter - need to import and thus
-  // decrease gold
-  // TODO: Different farms (export fruits/etc to other parts of the empire)
-  // TODO: Select export/domestic consumption for each farm
-  // TODO: Land area limited - increased by political power expenditure by
-  // sending lobbyists to Rome? Over a period of time.
-  // TODO: Farms should have areas with different costs and thus dependent on
-  // area for production output
-  // TODO: Farms can have different crops: wheat, oats, rye, wine!
-  // TODO: Bakeries & Grinding mills
-  // TODO: Diary productions - oxygala (ancient form of yoghurt),
-  // TODO: Send lobbyists to Rome to argue for different laws (lex), or even
-  // vote in plebiscites? Ex) Lex Canuleia ()
-  // TODO: Denarius (silver coinage) instead of gold
-  // TODO: Publicans (tax auction for tax collectors)
-  // TODO: Mansio (inc. political power, consumes area, upkeep)
-  // NOTE: Every 8th day was market day - useful for events
-
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
   city_add_construction_project(city, aqueduct);
@@ -1243,6 +1359,10 @@ int main() {
   city_add_effect(city, colonia_capacity);
 
   /// Policies
+  city->num_policies = 0;
+  city->political_capacity = 10;
+  city->policies = (struct Policy*) calloc(city->num_policies, sizeof(struct Policy));
+
   struct Effect land_tax_effect = {.duration = FOREVER};
   land_tax_effect.tick_effect = land_tax_tick_effect;
 
@@ -1277,12 +1397,35 @@ int main() {
       t0 = t1;
     }
 
-    werase(root);
-    update_ui(&cities[cidx]);
+    #ifdef USER_INTERFACE_GUI
+    /* Input */
+    SDL_Event evt;
+    nk_input_begin(ctx);
+    while (SDL_PollEvent(&evt)) {
+      if (evt.type == SDL_QUIT) {
+        return 0;
+      }
+      nk_sdl_handle_event(&evt);
+    }
+    nk_input_end(ctx);
+    update_gui(&cities[cidx], ctx);
+    int win_width = 0; int win_height = 0;
+    SDL_GetWindowSize(sdl_window, &win_width, &win_height);
+    glViewport(0, 0, win_width, win_height);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
+    SDL_GL_SwapWindow(sdl_window);
+    #endif
 
-    // TODO: Mnemionc keybindings (E for effects, D for Dempgraphics, H for
-    // help, C counstruction, P policy, S for summary (main screen)) Input
+    #ifdef USER_INTERFACE_TERMINAL
+    werase(root);
+    update_tui(&cities[cidx]);
+
     ch = getch();
+
+    // TODO: Mnemionc keybindings (E for effects, D for Demographics, H for
+    // help, C counstruction, P policy, S for summary (main screen)) Input
     switch (ch) {
     case '0':
       simulation_speed = 0;
@@ -1332,6 +1475,7 @@ int main() {
       policy_menu(&cities[cidx]);
       break;
     }
+    #endif
   }
   return 0;
 }
