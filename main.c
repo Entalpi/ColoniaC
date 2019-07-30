@@ -11,8 +11,8 @@
 #include <errno.h>
 
 // NOTE: Choice of UI: terminal or GUI based
-#define USER_INTERFACE_GUI
-// #define USER_INTERFACE_TERMINAL
+// #define USER_INTERFACE_GUI
+#define USER_INTERFACE_TERMINAL
 // TODO: Add warning if none are defined
 
 #ifdef USER_INTERFACE_GUI
@@ -1406,7 +1406,7 @@ int main(void) {
 
     #ifdef USER_INTERFACE_TERMINAL
     werase(root);
-    update_ui(&cities[cidx]);
+    update_tui(&cities[cidx]);
 
     ch = getch();
 
