@@ -1389,17 +1389,11 @@ int main(void) {
     }
     nk_input_end(ctx);
     update_gui(&cities[cidx], ctx);
-    /* Draw */
     int win_width = 0; int win_height = 0;
     SDL_GetWindowSize(sdl_window, &win_width, &win_height);
     glViewport(0, 0, win_width, win_height);
     glClear(GL_COLOR_BUFFER_BIT);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0);
-    /* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
-     * with blending, scissor, face culling, depth test and viewport and
-     * defaults everything back into a default state.
-     * Make sure to either a.) save and restore or b.) reset your own state after
-     * rendering the UI. */
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
     SDL_GL_SwapWindow(sdl_window);
     #endif
