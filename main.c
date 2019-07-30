@@ -37,6 +37,9 @@
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #endif
 
 // NOTE: Used for development
@@ -1041,31 +1044,61 @@ void glfw_error_callback(int e, const char* d) {
   fprintf(stderr, "Error %d: %s", e, d);
 }
 
-static void device_upload_atlas(GLuint* font_texture, const void *image, int width, int height) {
-  glGenTextures(1, font_texture);
-  glBindTexture(GL_TEXTURE_2D, *font_texture);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+struct nk_image nk_image_load(const char* filename) {
+  int x, y, n;
+  GLuint tex;
+  unsigned char* data = stbi_load(filename, &x, &y, &n, 0);
+  if (!data) {
+    fprintf(stderr, "[SDL]: failed to load image: %s", filename);
+  }
+
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+  glGenerateMipmap(GL_TEXTURE_2D);
+  stbi_image_free(data);
+  return nk_image_id((int)tex);
 }
+
+static struct nk_image icon;
 
 // Display graphical-based user interface (GUI)
 void update_gui(const struct City* c, struct nk_context* ctx) {
-  if (nk_begin(ctx, "Hello world!", nk_rect(50, 50, 200, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
-    nk_layout_row_static(ctx, 30, 80, 1);
-    if (nk_button_label(ctx, "Button")) {
-      printf("TODO more!");
+  // Main window
+  if (nk_begin(ctx, c->name, nk_rect(50, 50, 400, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE)) {
+    nk_layout_row_static(ctx, 50, 100, 4);
+
+    nk_text(ctx, "Population: 12 312", 10, NK_TEXT_ALIGN_LEFT);
+
+    if (nk_button_label(ctx, "Policies")) {
+      printf("TODO");
     }
+
+    if (nk_button_label(ctx, "Constructions")) {
+      printf("TODO");
+    }
+
+    if (nk_button_image_label(ctx, icon, "Hello", NK_TEXT_ALIGN_LEFT)) {
+      printf("TODO");
+    }
+
   }
   nk_end(ctx);
 }
 #endif
 
-int main() {
+int main(void) {
   srand(time(NULL));
 
+  // TODO: Starting screen with cool logotype and load/save, name city screens
+  // TODO: Add help flag with descriptions
+  // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
+
 #ifdef USER_INTERFACE_GUI
-  // Init GLFW
   const size_t WINDOW_WIDTH  = 1280;
   const size_t WINDOW_HEIGHT = 1080;
 
@@ -1077,7 +1110,7 @@ int main() {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_Window* sdl_window = SDL_CreateWindow("Demo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window* sdl_window = SDL_CreateWindow("ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_GLContext gl_context = SDL_GL_CreateContext(sdl_window);
   SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
 
@@ -1110,14 +1143,12 @@ int main() {
     nk_sdl_font_stash_begin(&atlas);
     nk_sdl_font_stash_end();
   }
+
+  icon = nk_image_load("/home/alexander/Desktop/ColoniaC/greek-temple.png");
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
   root = initscr(); /* initialize the curses library */
-
-  // TODO: Starting screen with cool logotype and load/save, name city screens
-  // TODO: Add help flag with descriptions
-  // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
 
   cbreak();             /* Line buffering disabled pass on everything to me*/
   keypad(stdscr, true); /* For keyboard arrows 	*/
