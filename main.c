@@ -374,15 +374,18 @@ const char *capacity_str(const enum CapacityType type) {
   return strs[type];
 }
 
-enum FarmProduceType { Grapes = 0, Wheat = 1 };
+enum FarmProduceType { Grapes = 0, Wheat = 1, NUMBER_OF_PRODUCE };
 
 const char *farm_produce_str(const enum FarmProduceType type) {
   static const char *strs[2] = {"Grapes", "Wheat"};
   return strs[type];
 }
 
+// TODO: Prefix all lookup functions (functions with tables of data) with lut_* 
+
 struct FarmArgument {
-  size_t area; // Area in
+  float tax_percentage; // [0, 1] in land tax
+  size_t area; // Land area used (jugerum, cirka 0.6 hectare)
   enum FarmProduceType produce;
 };
 
@@ -410,12 +413,15 @@ struct Construction {
 
 struct City {
   char *name;
-  float food_production;
-  float food_usage;      // Higher usage than production means importation
-  float gold;            // Pounds of gold (kg??) (negative, debt??)
-  float gold_usage;      // Income / Lose
+  // Farming
+  float *produce_values; // Value in terms of produce
   size_t land_area;      // Land area available (used by farms, mansio, castrum)
   size_t land_area_used; // Land used
+  float food_production; // TODO: Food production / day in terms of calories?
+  float food_usage;      // Higher usage than production means importation
+  // Gold
+  float gold;            // Pounds of gold (kg??) (negative, debt??)
+  float gold_usage;      // Income / Lose
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -542,6 +548,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->num_constructions = c->num_constructions;
   c1->constructions = c->constructions;
   c1->land_area = c->land_area;
+  c1->produce_values = c->produce_values;
 
   // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
@@ -577,6 +584,10 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   // Compute changes based on current state
   c1->gold = c->gold - c1->gold_usage;
 
+  // Import / Export of foodstuffs
+  const float avg_food_price = 0.01f;
+  c1->gold += avg_food_price * (c->food_production - c->food_usage);
+
   timestep++;
   increment_date(&date);
 }
@@ -589,6 +600,7 @@ void building_maintenance_tick_effect(struct Effect *e, const struct City *c,
 }
 
 void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
+  c1->birthrate += 0.0000001f;
   if (is_winter(&date)) {
     return;
   }
@@ -629,7 +641,7 @@ void temple_of_mars_tick_effect(struct Effect *e, const struct City *c,
 
 void pops_eating_tick_effect(struct Effect *e, const struct City *c,
                              struct City *c1) {
-  const uint32_t consumption = c->population * 0.001f;
+  const uint32_t consumption = c->population * 0.0001f;
   c1->food_usage += consumption;
 }
 
@@ -649,9 +661,13 @@ void senate_house_tick_effect(struct Effect *e, const struct City *c,
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
-  // TODO: Calculate total farm area
-  const float tax_percentage = *((float *)e->arg);
-  c1->gold_usage -= 5.0f * tax_percentage; // TODO: Gold income perhaps ... ?
+  const struct FarmArgument *arg = (struct FarmArgument*) e->arg;
+  const float land_tax_price = 0.2f;
+  c1->gold_usage -= land_tax_price * arg->area * arg->tax_percentage; // TODO: Gold income perhaps ... ?
+}
+
+void insula_tick_effect(struct Effect* e, const struct City* c, struct City* c1) {
+  // TODO: Insula tick effect
 }
 
 // TODO: Expand this to a decision tree and then a story in which you either
@@ -783,7 +799,7 @@ void construction_menu(struct City *c) {
       if (i == selector) {
         wattroff(win, A_REVERSE);
         offset = 1;
-        wmvclrprintw(win, s + i + offset, 1, "%s",
+        wmvclrprintw(win, s + i + offset, 1, " - %s",
                      c->construction_projects[i].description_str);
       }
     }
@@ -966,6 +982,7 @@ void update_ui(const struct City *c) {
   row += 1;
   wmvclrprintw(root, row++, 0, "[3] RESOURCES [+]");
   wmvclrprintw(root, row++, 0, "Gold (%'.2f): %.2f kg", c->gold_usage, c->gold);
+  wmvclrprintw(root, row++, 0, "Land: %u jugerum", c->land_area);
   wmvclrprintw(root, row++, 0, "Food consumption: %'.1f kcal",
                c->food_production - c->food_usage);
   if (c->food_production - c->food_usage > 0.0f) {
@@ -973,7 +990,6 @@ void update_ui(const struct City *c) {
   } else {
     wmvclrprint(root, row++, 0, "IMPORTING FOOD");
   }
-  wmvclrprintw(root, row++, 0, "Land area: %u", c->land_area);
 
   row += 1;
   wmvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage,
@@ -1029,6 +1045,9 @@ int main() {
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
   city->land_area = 100;
+  city->produce_values = (float*) calloc(sizeof(float), NUMBER_OF_PRODUCE);
+  city->produce_values[Grapes] = 0.35f;
+  city->produce_values[Wheat]  = 0.45f;
 
   struct Effect aqueduct_construction_effect = {
       .name_str = "Aqueduct",
@@ -1061,7 +1080,7 @@ int main() {
       .construction_time = 7,
       .maintenance = 0.0f,
       .name_str = "Farm",
-      .description_str = "Piece of land that can produce various crops.",
+      .description_str = "Piece of land generating various produce.",
       .effect = farm_construction_effects,
       .num_effects = 2};
 
@@ -1158,6 +1177,7 @@ int main() {
   insula_construction_effect.name_str = "Insula";
   insula_construction_effect.duration = 0;
   insula_construction_effect.arg = 0;
+  insula_construction_effect.tick_effect = insula_tick_effect;
 
   struct Construction insula = {.name_str = "Insula",
                                 .description_str =
@@ -1189,6 +1209,7 @@ int main() {
   // TODO: Denarius (silver coinage) instead of gold
   // TODO: Publicans (tax auction for tax collectors)
   // TODO: Mansio (inc. political power, consumes area, upkeep)
+  // NOTE: Every 8th day was market day - useful for events
 
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
