@@ -45,11 +45,6 @@
 // NOTE: Used for development
 #define DEBUG
 
-// TODO: Add an event log
-// Event: "Our scouts report that barbarians are gathering under the cmd of
-// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
-// spoiling? Food production should vary with seasons
-
 #define C_KEY_DOWN 258
 #define C_KEY_UP 259
 #define C_KEY_LEFT 260
@@ -417,6 +412,46 @@ const char *farm_produce_str(const enum FarmProduceType type) {
 }
 
 // TODO: Prefix all lookup functions (functions with tables of data) with lut_* 
+
+// TODO: Add an event log
+// Event: "Our scouts report that barbarians are gathering under the cmd of
+// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
+// spoiling? Food production should vary with seasons
+#define EVENTLOG_CAPACITY 10
+struct EventLog {
+  char** lines;
+  uint32_t curr_line;
+  const uint32_t capacity;
+};
+
+struct EventLog eventlog_new() {
+  struct EventLog log = {.capacity = EVENTLOG_CAPACITY};
+  log.lines = (char**) calloc(1, EVENTLOG_CAPACITY);
+  log.curr_line = 0;
+  return log;
+}
+
+void eventlog_add_msg(struct EventLog* log, const char* msg) {
+  if (log->lines[log->curr_line] != NULL) {
+    free(log->lines[log->curr_line]);
+  }
+
+  log->curr_line = (log->curr_line + 1) % log->capacity;
+  strcpy(log->lines[log->curr_line], msg);
+}
+
+void eventlog_clear(struct EventLog* log) {
+  for (size_t i = 0; i < log->capacity; i++) {
+    if (log->lines[i]) {
+      free(log->lines[i]);
+    }
+  }
+  log->curr_line = 0;
+}
+
+void eventlog_print(void) {
+  // TODO: Implement ...  
+}
 
 struct FarmArgument {
   float tax_percentage; // [0, 1] in land tax
