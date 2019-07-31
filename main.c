@@ -58,6 +58,18 @@
 #define SUMMER "summer"
 #define AUTUMN "autumn"
 
+/***** string utility functions *****/
+char* str_concat_new(const char* lhs, const char* rhs) {
+  if (lhs == NULL || rhs == NULL) { return NULL; }
+  const size_t lhs_lng = strlen(lhs);
+  const size_t rhs_lng = strlen(rhs);
+  const size_t new_lng = lhs_lng + rhs_lng;
+  char* new_str = (char*) calloc(new_lng, sizeof(char));
+  strncpy(new_str, lhs, lhs_lng);
+  strncpy(&new_str[lhs_lng], rhs, rhs_lng);
+  return new_str; 
+}
+
 /***** ncurses utility functions *****/
 /// Window, MoVe, CLearR, PRINT, Word
 static inline void wmvclrprintw(WINDOW *win, int y, int x, const char *fmt,
@@ -789,7 +801,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   // TODO: String in struct Effect must be free'd after Effect is done by
   // simulate_..timestep
-  sprintf(e->description_str, "%lu days left, costing %.2f / day", e->duration,
+  sprintf(e->description_str, "%lld days left, costing %.2f / day", e->duration,
           arg->construction_cost);
 
   if (e->duration == 1) {
@@ -1012,6 +1024,7 @@ void policy_menu(struct City *c) {
 
 void help_menu(struct City *c) {
   // TODO: Implement help menu
+  // TODO: There should be a explain word/concept discovery functionality like Emacs's explain-function
 }
 
 /// Display terminal-based user interface
@@ -1091,6 +1104,10 @@ void update_tui(const struct City *c) {
 }
 
 #ifdef USER_INTERFACE_GUI
+// NOTE: Updated whenever the window changes size
+static int WINDOW_WIDTH  = 1280;
+static int WINDOW_HEIGHT = 1080;
+
 void glfw_error_callback(int e, const char* d) {
   fprintf(stderr, "Error %d: %s", e, d);
 }
@@ -1142,17 +1159,22 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
 }
 #endif
 
+// NOTE: Filepaths initialized at startup
+static char* FILEPATH_RSRC = NULL;
+
+#include "cJSON.h"
+
 int main(void) {
   srand(time(NULL));
+
+  FILEPATH_RSRC = (char*) calloc(128, sizeof(char));
+  FILEPATH_RSRC = str_concat_new(FILEPATH_RSRC, "resources/");
 
   // TODO: Starting screen with cool logotype and load/save, name city screens
   // TODO: Add help flag with descriptions
   // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
 
 #ifdef USER_INTERFACE_GUI
-  const size_t WINDOW_WIDTH  = 1280;
-  const size_t WINDOW_HEIGHT = 1080;
-
   /* SDL setup */
   SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
   SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_EVENTS);
@@ -1164,7 +1186,7 @@ int main(void) {
   SDL_Window* sdl_window = SDL_CreateWindow("ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_GLContext gl_context = SDL_GL_CreateContext(sdl_window);
   SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
-
+ 
   // OpenGL
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
   glewExperimental = true;
@@ -1181,8 +1203,10 @@ int main(void) {
     struct nk_font_atlas* atlas;
     nk_sdl_font_stash_begin(&atlas);
     const float FONT_HEIGHT = 15.0f;
-    const char* FONT_FILEPATH = "/home/alexander/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
-    struct nk_font* font = nk_font_atlas_add_from_file(atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
+    const char* font_name = "fonts/CONSTANTINE/Constantine.ttf";
+    const char* font_filepath = str_concat_new(FILEPATH_RSRC, font_name);
+    struct nk_font* font = nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
+    if (font_filepath) { free((void*) font_filepath); }
     if (font == NULL) {
       fprintf(stderr, "Could not load custom font.");
       return -1;
@@ -1195,12 +1219,15 @@ int main(void) {
     nk_sdl_font_stash_end();
   }
 
-  icon = nk_image_load("/home/alexander/Desktop/ColoniaC/greek-temple.png");
+  // NOTE: _new in the function name indicates that the callee is responsible for the returned pointers lifetime
+  const char* icon_name = "icons/greek-temple.png";
+  const char* filepath  = str_concat_new(FILEPATH_RSRC, icon_name);
+  icon = nk_image_load(filepath);
+  if (filepath) { free((void*) filepath); }
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
-  root = initscr(); /* initialize the curses library */
-
+  root = initscr();     /* initialize the curses library */
   cbreak();             /* Line buffering disabled pass on everything to me*/
   keypad(stdscr, true); /* For keyboard arrows 	*/
   noecho();             /* Do not echo out input */
@@ -1444,9 +1471,8 @@ int main(void) {
     }
     nk_input_end(ctx);
     update_gui(&cities[cidx], ctx);
-    int win_width = 0; int win_height = 0;
-    SDL_GetWindowSize(sdl_window, &win_width, &win_height);
-    glViewport(0, 0, win_width, win_height);
+    SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
+    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
@@ -1512,5 +1538,6 @@ int main(void) {
     }
     #endif
   }
+  if (FILEPATH_RSRC) { free((void*) FILEPATH_RSRC); }
   return 0;
 }
