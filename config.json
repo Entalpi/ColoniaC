@@ -1,0 +1,9 @@
+/*
+Configuration file of ColoniaC
+For documentation see ???
+ */
+{
+    config: {
+        root_folder = "/Users/lingtorp/repos/"
+    }
+}

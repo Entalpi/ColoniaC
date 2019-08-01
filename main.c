@@ -11,8 +11,8 @@
 #include <errno.h>
 
 // NOTE: Choice of UI: terminal or GUI based
-// #define USER_INTERFACE_GUI
-#define USER_INTERFACE_TERMINAL
+#define USER_INTERFACE_GUI
+// #define USER_INTERFACE_TERMINAL
 // TODO: Add warning if none are defined
 
 #ifdef USER_INTERFACE_GUI
@@ -45,11 +45,6 @@
 // NOTE: Used for development
 #define DEBUG
 
-// TODO: Add an event log
-// Event: "Our scouts report that barbarians are gathering under the cmd of
-// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
-// spoiling? Food production should vary with seasons
-
 #define C_KEY_DOWN 258
 #define C_KEY_UP 259
 #define C_KEY_LEFT 260
@@ -62,6 +57,18 @@
 #define SPRING "spring"
 #define SUMMER "summer"
 #define AUTUMN "autumn"
+
+/***** string utility functions *****/
+char* str_concat_new(const char* lhs, const char* rhs) {
+  if (lhs == NULL || rhs == NULL) { return NULL; }
+  const size_t lhs_lng = strlen(lhs);
+  const size_t rhs_lng = strlen(rhs);
+  const size_t new_lng = lhs_lng + rhs_lng;
+  char* new_str = (char*) calloc(new_lng, sizeof(char));
+  strncpy(new_str, lhs, lhs_lng);
+  strncpy(&new_str[lhs_lng], rhs, rhs_lng);
+  return new_str; 
+}
 
 /***** ncurses utility functions *****/
 /// Window, MoVe, CLearR, PRINT, Word
@@ -409,15 +416,58 @@ const char *capacity_str(const enum CapacityType type) {
   return strs[type];
 }
 
-enum FarmProduceType { Grapes = 0, Wheat = 1 };
+enum FarmProduceType { Grapes = 0, Wheat = 1, NUMBER_OF_PRODUCE };
 
 const char *farm_produce_str(const enum FarmProduceType type) {
   static const char *strs[2] = {"Grapes", "Wheat"};
   return strs[type];
 }
 
+// TODO: Prefix all lookup functions (functions with tables of data) with lut_* 
+
+// TODO: Add an event log
+// Event: "Our scouts report that barbarians are gathering under the cmd of
+// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
+// spoiling? Food production should vary with seasons
+#define EVENTLOG_CAPACITY 10
+struct EventLog {
+  char** lines;
+  uint32_t curr_line;
+  const uint32_t capacity;
+};
+
+struct EventLog eventlog_new() {
+  struct EventLog log = {.capacity = EVENTLOG_CAPACITY};
+  log.lines = (char**) calloc(1, EVENTLOG_CAPACITY);
+  log.curr_line = 0;
+  return log;
+}
+
+void eventlog_add_msg(struct EventLog* log, const char* msg) {
+  if (log->lines[log->curr_line] != NULL) {
+    free(log->lines[log->curr_line]);
+  }
+
+  log->curr_line = (log->curr_line + 1) % log->capacity;
+  strcpy(log->lines[log->curr_line], msg);
+}
+
+void eventlog_clear(struct EventLog* log) {
+  for (size_t i = 0; i < log->capacity; i++) {
+    if (log->lines[i]) {
+      free(log->lines[i]);
+    }
+  }
+  log->curr_line = 0;
+}
+
+void eventlog_print(void) {
+  // TODO: Implement ...  
+}
+
 struct FarmArgument {
-  size_t area; // Area in
+  float tax_percentage; // [0, 1] in land tax
+  size_t area; // Land area used (jugerum, cirka 0.6 hectare)
   enum FarmProduceType produce;
 };
 
@@ -445,12 +495,15 @@ struct Construction {
 
 struct City {
   char *name;
-  float food_production;
-  float food_usage;      // Higher usage than production means importation
-  float gold;            // Pounds of gold (kg??) (negative, debt??)
-  float gold_usage;      // Income / Lose
+  // Farming
+  float *produce_values; // Value in terms of produce
   size_t land_area;      // Land area available (used by farms, mansio, castrum)
   size_t land_area_used; // Land used
+  float food_production; // TODO: Food production / day in terms of calories?
+  float food_usage;      // Higher usage than production means importation
+  // Gold
+  float gold;            // Pounds of gold (kg??) (negative, debt??)
+  float gold_usage;      // Income / Lose
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -577,6 +630,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->num_constructions = c->num_constructions;
   c1->constructions = c->constructions;
   c1->land_area = c->land_area;
+  c1->produce_values = c->produce_values;
 
   // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
@@ -612,6 +666,10 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   // Compute changes based on current state
   c1->gold = c->gold - c1->gold_usage;
 
+  // Import / Export of foodstuffs
+  const float avg_food_price = 0.01f;
+  c1->gold += avg_food_price * (c->food_production - c->food_usage);
+
   timestep++;
   increment_date(&date);
 }
@@ -624,6 +682,7 @@ void building_maintenance_tick_effect(struct Effect *e, const struct City *c,
 }
 
 void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
+  c1->birthrate += 0.0000001f;
   if (is_winter(&date)) {
     return;
   }
@@ -664,7 +723,7 @@ void temple_of_mars_tick_effect(struct Effect *e, const struct City *c,
 
 void pops_eating_tick_effect(struct Effect *e, const struct City *c,
                              struct City *c1) {
-  const uint32_t consumption = c->population * 0.001f;
+  const uint32_t consumption = c->population * 0.0001f;
   c1->food_usage += consumption;
 }
 
@@ -684,9 +743,13 @@ void senate_house_tick_effect(struct Effect *e, const struct City *c,
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
-  // TODO: Calculate total farm area
-  const float tax_percentage = *((float *)e->arg);
-  c1->gold_usage -= 5.0f * tax_percentage; // TODO: Gold income perhaps ... ?
+  const struct FarmArgument *arg = (struct FarmArgument*) e->arg;
+  const float land_tax_price = 0.2f;
+  c1->gold_usage -= land_tax_price * arg->area * arg->tax_percentage; // TODO: Gold income perhaps ... ?
+}
+
+void insula_tick_effect(struct Effect* e, const struct City* c, struct City* c1) {
+  // TODO: Insula tick effect
 }
 
 // TODO: Expand this to a decision tree and then a story in which you either
@@ -738,7 +801,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   // TODO: String in struct Effect must be free'd after Effect is done by
   // simulate_..timestep
-  sprintf(e->description_str, "%lu days left, costing %.2f / day", e->duration,
+  sprintf(e->description_str, "%lld days left, costing %.2f / day", e->duration,
           arg->construction_cost);
 
   if (e->duration == 1) {
@@ -818,7 +881,7 @@ void construction_menu(struct City *c) {
       if (i == selector) {
         wattroff(win, A_REVERSE);
         offset = 1;
-        wmvclrprintw(win, s + i + offset, 1, "%s",
+        wmvclrprintw(win, s + i + offset, 1, " - %s",
                      c->construction_projects[i].description_str);
       }
     }
@@ -961,6 +1024,7 @@ void policy_menu(struct City *c) {
 
 void help_menu(struct City *c) {
   // TODO: Implement help menu
+  // TODO: There should be a explain word/concept discovery functionality like Emacs's explain-function
 }
 
 /// Display terminal-based user interface
@@ -1001,6 +1065,7 @@ void update_tui(const struct City *c) {
   row += 1;
   wmvclrprintw(root, row++, 0, "[3] RESOURCES [+]");
   wmvclrprintw(root, row++, 0, "Gold (%'.2f): %.2f kg", c->gold_usage, c->gold);
+  wmvclrprintw(root, row++, 0, "Land: %u jugerum", c->land_area);
   wmvclrprintw(root, row++, 0, "Food consumption: %'.1f kcal",
                c->food_production - c->food_usage);
   if (c->food_production - c->food_usage > 0.0f) {
@@ -1008,7 +1073,6 @@ void update_tui(const struct City *c) {
   } else {
     wmvclrprint(root, row++, 0, "IMPORTING FOOD");
   }
-  wmvclrprintw(root, row++, 0, "Land area: %u", c->land_area);
 
   row += 1;
   wmvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage,
@@ -1040,6 +1104,10 @@ void update_tui(const struct City *c) {
 }
 
 #ifdef USER_INTERFACE_GUI
+// NOTE: Updated whenever the window changes size
+static int WINDOW_WIDTH  = 1280;
+static int WINDOW_HEIGHT = 1080;
+
 void glfw_error_callback(int e, const char* d) {
   fprintf(stderr, "Error %d: %s", e, d);
 }
@@ -1091,17 +1159,22 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
 }
 #endif
 
+// NOTE: Filepaths initialized at startup
+static char* FILEPATH_RSRC = NULL;
+
+#include "cJSON.h"
+
 int main(void) {
   srand(time(NULL));
+
+  FILEPATH_RSRC = (char*) calloc(128, sizeof(char));
+  FILEPATH_RSRC = str_concat_new(FILEPATH_RSRC, "resources/");
 
   // TODO: Starting screen with cool logotype and load/save, name city screens
   // TODO: Add help flag with descriptions
   // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
 
 #ifdef USER_INTERFACE_GUI
-  const size_t WINDOW_WIDTH  = 1280;
-  const size_t WINDOW_HEIGHT = 1080;
-
   /* SDL setup */
   SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
   SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_EVENTS);
@@ -1113,7 +1186,7 @@ int main(void) {
   SDL_Window* sdl_window = SDL_CreateWindow("ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_GLContext gl_context = SDL_GL_CreateContext(sdl_window);
   SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
-
+ 
   // OpenGL
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
   glewExperimental = true;
@@ -1130,8 +1203,10 @@ int main(void) {
     struct nk_font_atlas* atlas;
     nk_sdl_font_stash_begin(&atlas);
     const float FONT_HEIGHT = 15.0f;
-    const char* FONT_FILEPATH = "/home/alexander/Desktop/CONSTANTINE/Constantine.ttf"; // TODO: Refactor
-    struct nk_font* font = nk_font_atlas_add_from_file(atlas, FONT_FILEPATH, FONT_HEIGHT, NULL);
+    const char* font_name = "fonts/CONSTANTINE/Constantine.ttf";
+    const char* font_filepath = str_concat_new(FILEPATH_RSRC, font_name);
+    struct nk_font* font = nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
+    if (font_filepath) { free((void*) font_filepath); }
     if (font == NULL) {
       fprintf(stderr, "Could not load custom font.");
       return -1;
@@ -1144,12 +1219,15 @@ int main(void) {
     nk_sdl_font_stash_end();
   }
 
-  icon = nk_image_load("/home/alexander/Desktop/ColoniaC/greek-temple.png");
+  // NOTE: _new in the function name indicates that the callee is responsible for the returned pointers lifetime
+  const char* icon_name = "icons/greek-temple.png";
+  const char* filepath  = str_concat_new(FILEPATH_RSRC, icon_name);
+  icon = nk_image_load(filepath);
+  if (filepath) { free((void*) filepath); }
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
-  root = initscr(); /* initialize the curses library */
-
+  root = initscr();     /* initialize the curses library */
   cbreak();             /* Line buffering disabled pass on everything to me*/
   keypad(stdscr, true); /* For keyboard arrows 	*/
   noecho();             /* Do not echo out input */
@@ -1168,6 +1246,9 @@ int main(void) {
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
   city->land_area = 100;
+  city->produce_values = (float*) calloc(sizeof(float), NUMBER_OF_PRODUCE);
+  city->produce_values[Grapes] = 0.35f;
+  city->produce_values[Wheat]  = 0.45f;
 
   struct Effect aqueduct_construction_effect = {
       .name_str = "Aqueduct",
@@ -1200,7 +1281,7 @@ int main(void) {
       .construction_time = 7,
       .maintenance = 0.0f,
       .name_str = "Farm",
-      .description_str = "Piece of land that can produce various crops.",
+      .description_str = "Piece of land generating various produce.",
       .effect = farm_construction_effects,
       .num_effects = 2};
 
@@ -1297,6 +1378,7 @@ int main(void) {
   insula_construction_effect.name_str = "Insula";
   insula_construction_effect.duration = 0;
   insula_construction_effect.arg = 0;
+  insula_construction_effect.tick_effect = insula_tick_effect;
 
   struct Construction insula = {.name_str = "Insula",
                                 .description_str =
@@ -1389,9 +1471,8 @@ int main(void) {
     }
     nk_input_end(ctx);
     update_gui(&cities[cidx], ctx);
-    int win_width = 0; int win_height = 0;
-    SDL_GetWindowSize(sdl_window, &win_width, &win_height);
-    glViewport(0, 0, win_width, win_height);
+    SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
+    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
@@ -1457,5 +1538,6 @@ int main(void) {
     }
     #endif
   }
+  if (FILEPATH_RSRC) { free((void*) FILEPATH_RSRC); }
   return 0;
 }

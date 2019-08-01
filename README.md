@@ -15,7 +15,7 @@ Okay, but what is up with the 'C' at the end then?
 This is to signify that this game is written in the C-programming language. 
 
 ## HOW DO I PLAY IT?!?! 
-1. 'git clone ...'
+1. 'git clone https://github.com/Entalpi/ColoniaC'
 2. 'make'
 3. './colonia'
 4. Read the tutorial and enjoy.
