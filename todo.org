@@ -1,6 +1,66 @@
-* TODOs of ColoniaC
-** TODO: Roman castrum (inc. military power, population boost, excepts more
-** services, inc. gold)
+* Game design documentation
+
+Gameplay components
+
+** Power: Political, Diplomatic, Civic, Military
+   Power represents the abstract ability of the state in various regards. The capacity controls
+   the 'width' of the state or rather the size of the bureacracy.
+
+   Poltical power is the state's ability to enforce its policies and to which degree they are effective.
+   By spending more poiltical power behind an effort the effects are controlled. 
+
+
+ - Politcal power can be negative which increases the risk of harmful events such as ...
+ ... generals disobeying order(s)
+ ... riots
+ ... plebian work strikes
+ ... murders of politicians (decreases polticla capacity permentanly)
+ ... 
+
+
+** Constructions
+
+** Gold
+
+** Policies
+
+** Food
+
+** Events
+
+Feedback chains
+
+ - Short
+
+
+ - Medium
+) Unlocking new constructions enables progression
+) Moderating the numbers through various means
+ - What means? 
+) 
+
+ - Long
+) Events change the gamescape, by changing the effectiviness of various game elements, thus ensuring 
+that tweaks to the state is always neccessary and thereby providing opportunity for gameplay over 
+the course of game's length.
+ 
+ - Game length/over life time of game
+Explicit goals unlike EU4 is to prevent the collapse of Rome thus making the game time infinite.
+Historically the times will change very little (no modern inventations except contempory ancient ones).
+
+Short-term goals?
+- Ex #1) Click to implement a policy
+Medium-term goals?
+- Ex #1) By implementing the policy our revenue will grow ... 
+         ... so that I can fund the war effort in the against Carthage
+Long-term goals?
+- Ex #1) Preventing the collapse of Rome (as a nation)
+
+* TODOs of ColoniaC implementation-wise
+** TODO: Starting screen with cool logotype and load/save, name city, etc
+** TODO: Add help flag with descriptions
+** TODO: Hard mode = Everything is in Latin with Roman measurements, enjoy.
+** TODO: Roman castrum (inc. military power, population boost, excepts more services, inc. gold)
 ** TODO: Roman bath construction
 ** TODO: Roman amphitheater
 ** TODO: Coin mint - gold revenue
@@ -20,3 +80,10 @@
 ** TODO: Denarius (silver coinage) instead of gold
 ** TODO: Publicans (tax auction for tax collectors)
 ** TODO: Mansio (inc. political power, consumes area, upkeep)
+** TODO: Mnemionc keybindings (E for effects, D for Demographics, H for help, C counstruction, P policy, S for summary (main screen)) Input
+** TODO: Binary save to file of gamestate
+** TODO: Binary load from file of gamestate
+** TODO: JSON save to file of gamestate
+** TODO: JSON load from file of gamestate
+
+* TODOs for today

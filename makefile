@@ -6,9 +6,9 @@ LIBS = -lm -lncurses -lGLEW -lSDL2
 OSTYPE := $(shell uname)
 
 ifeq ($(OSTYPE), Darwin)
-	CFLAGS += -framework OpenGL
-else ifeq ($(OSTYPE), linux-gnu)
-	CFLAGS += -lGL
+	LIBS += -framework OpenGL
+else ifeq ($(OSTYPE), Linux)
+	LIBS += -lGL
 else
 # TODO: Windows build support?
 endif

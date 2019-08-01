@@ -1150,7 +1150,11 @@ struct nk_image nk_image_load(const char* filename) {
   return nk_image_id((int)tex);
 }
 
-static struct nk_image icon;
+// TODO:
+void open_gui_quit_menu(const struct City* c, struct nk_context* ctx) {
+  assert(c);
+  assert(ctx);
+}
 
 // Display graphical-based user interface (GUI)
 void update_gui(const struct City* c, struct nk_context* ctx) {
@@ -1169,11 +1173,6 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
     if (nk_button_label(ctx, "Constructions")) {
       printf("TODO");
     }
-
-    if (nk_button_image_label(ctx, icon, "Hello", NK_TEXT_ALIGN_LEFT)) {
-      printf("TODO");
-    }
-
   }
   nk_end(ctx);
 
@@ -1238,10 +1237,6 @@ void parse_config_file() {
 int main(void) {
   srand(time(NULL));
   parse_config_file();
-
-  // TODO: Starting screen with cool logotype and load/save, name city screens
-  // TODO: Add help flag with descriptions
-  // TODO: Hard mode = Everything is in Latin with Roman measurements. Enjoy.
 
 #ifdef USER_INTERFACE_GUI
   /* SDL setup */
@@ -1450,7 +1445,7 @@ int main(void) {
   insula_construction_effect.tick_effect = insula_tick_effect;
 
   struct Construction insula = {.name_str = "Insula",
-                                .description_str =
+                                 .description_str =
                                     "Apartment block with space for ",
                                 .cost = 10.0f,
                                 .maintenance = 0.05f,
@@ -1536,6 +1531,32 @@ int main(void) {
       if (evt.type == SDL_QUIT) {
         return 0;
       }
+      if (evt.type == SDL_KEYDOWN) {
+        switch (evt.key.keysym.sym) {
+        case SDLK_ESCAPE:
+          open_gui_quit_menu(&cities[cidx], ctx);
+          break;
+        case SDLK_SPACE:
+          if (simulation_speed == 0) {
+            simulation_speed = 5; // TODO: last_simulation_speed;
+          } else {
+            simulation_speed = 0;
+          }
+          break;
+        case SDLK_0:
+          simulation_speed = 0;
+          break;
+        case SDLK_1:
+          simulation_speed = 1;
+          break;
+        case SDLK_2:
+          simulation_speed = 2;
+          break;
+        case SDLK_3:
+          simulation_speed = 3;
+          break;
+        }
+      }
       nk_sdl_handle_event(&evt);
     }
     nk_input_end(ctx);
@@ -1554,9 +1575,8 @@ int main(void) {
 
     ch = getch();
 
-    // TODO: Mnemionc keybindings (E for effects, D for Demographics, H for
-    // help, C counstruction, P policy, S for summary (main screen)) Input
     switch (ch) {
+    case ' ':
     case '0':
       simulation_speed = 0;
       break;
