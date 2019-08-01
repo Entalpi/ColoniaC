@@ -57,6 +57,9 @@ Long-term goals?
 - Ex #1) Preventing the collapse of Rome (as a nation)
 
 * TODOs of ColoniaC implementation-wise
+** TODO: Starting screen with cool logotype and load/save, name city, etc
+** TODO: Add help flag with descriptions
+** TODO: Hard mode = Everything is in Latin with Roman measurements, enjoy.
 ** TODO: Roman castrum (inc. military power, population boost, excepts more services, inc. gold)
 ** TODO: Roman bath construction
 ** TODO: Roman amphitheater
@@ -77,4 +80,10 @@ Long-term goals?
 ** TODO: Denarius (silver coinage) instead of gold
 ** TODO: Publicans (tax auction for tax collectors)
 ** TODO: Mansio (inc. political power, consumes area, upkeep)
+** TODO: Mnemionc keybindings (E for effects, D for Demographics, H for help, C counstruction, P policy, S for summary (main screen)) Input
+** TODO: Binary save to file of gamestate
+** TODO: Binary load from file of gamestate
+** TODO: JSON save to file of gamestate
+** TODO: JSON load from file of gamestate
 
+* TODOs for today
