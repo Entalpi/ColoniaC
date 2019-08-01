@@ -7,7 +7,7 @@ OSTYPE := $(shell uname)
 
 ifeq ($(OSTYPE), Darwin)
 	CFLAGS += -framework OpenGL
-else ifeq ($(OSTYPE), linux-gnu)
+else ifeq ($(OSTYPE), Linux)
 	CFLAGS += -lGL
 else
 # TODO: Windows build support?
