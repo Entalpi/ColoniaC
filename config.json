@@ -1,9 +1,6 @@
-/*
-Configuration file of ColoniaC
-For documentation see ???
- */
 {
-    config: {
-        root_folder = "/Users/lingtorp/repos/"
-    }
+    "root_folder": "/Users/lingtorp/repos/colonia/",
+    "gui": true,
+    "hard_mode": false,
+    "language": 0
 }
