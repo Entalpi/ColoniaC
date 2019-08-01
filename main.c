@@ -13,7 +13,7 @@
 // NOTE: Choice of UI: terminal or GUI based
 #define USER_INTERFACE_GUI
 // #define USER_INTERFACE_TERMINAL
-// TODO: Add warning if none are defined
+// TODO: Moved to config file, implement here
 
 #ifdef USER_INTERFACE_GUI
 
@@ -42,6 +42,8 @@
 
 #endif
 
+#include "cJSON.h"
+
 // NOTE: Used for development
 #define DEBUG
 
@@ -59,6 +61,7 @@
 #define AUTUMN "autumn"
 
 /***** string utility functions *****/
+// Returns callee owned ptr to the concatenation of lhs & rhs, NULL on failure
 char* str_concat_new(const char* lhs, const char* rhs) {
   if (lhs == NULL || rhs == NULL) { return NULL; }
   const size_t lhs_lng = strlen(lhs);
@@ -68,6 +71,21 @@ char* str_concat_new(const char* lhs, const char* rhs) {
   strncpy(new_str, lhs, lhs_lng);
   strncpy(&new_str[lhs_lng], rhs, rhs_lng);
   return new_str; 
+}
+
+/***** file utility functions *****/
+// Returns callee owned ptr to file contents, NULL on failure
+const char* open_file(const char* filepath) {
+  if (filepath == NULL) { return NULL; }
+  FILE* f = fopen(filepath, "r");
+  if (f == NULL) { return NULL; }
+  fseek(f, 0, SEEK_END);
+  const size_t size = ftell(f);
+  const char* file_contents = (char*) calloc(size, sizeof(char));
+  rewind(f);
+  fread((void*) file_contents, 1, size, f);
+  fclose(f);
+  return file_contents;
 }
 
 /***** ncurses utility functions *****/
@@ -1137,10 +1155,12 @@ static struct nk_image icon;
 // Display graphical-based user interface (GUI)
 void update_gui(const struct City* c, struct nk_context* ctx) {
   // Main window
-  if (nk_begin(ctx, c->name, nk_rect(50, 50, 400, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE)) {
+  const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_BORDER | NK_WINDOW_MOVABLE;
+  const char* main_win_title = c->name;
+  if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400), main_win_flags)) {
     nk_layout_row_static(ctx, 50, 100, 4);
 
-    nk_text(ctx, "Population: 12 312", 10, NK_TEXT_ALIGN_LEFT);
+    nk_text(ctx, "Population", 10, NK_TEXT_ALIGN_LEFT);
 
     if (nk_button_label(ctx, "Policies")) {
       printf("TODO");
@@ -1156,19 +1176,68 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
 
   }
   nk_end(ctx);
+
+  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER | NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
+  if (nk_begin(ctx, "Event log", nk_rect(50, 600, 600, 100), win_flags)) {
+    nk_text(ctx, "HELLO", 10, 0);
+  }
+  nk_end(ctx);
 }
 #endif
 
-// NOTE: Filepaths initialized at startup
-static char* FILEPATH_RSRC = NULL;
+/// Game configuration initialized once at startup
+struct Config {
+  char* FILEPATH_ROOT;
+  char* FILEPATH_RSRC;
+  bool GUI;
+  bool HARD_MODE;
+  int LANGUAGE;
+};
 
-#include "cJSON.h"
+static struct Config CONFIG;
+
+// Parses the config.json at the project root and inits the Config struct at startup
+void parse_config_file() {
+  const char* raw_json = open_file("config.json");
+  if (raw_json) {      
+    cJSON* json = cJSON_Parse(raw_json);
+
+    if (json) {
+      struct cJSON* root_folder = cJSON_GetObjectItemCaseSensitive(json, "root_folder");
+      if (cJSON_IsString(root_folder) && root_folder->valuestring) {
+        CONFIG.FILEPATH_ROOT = root_folder->valuestring;
+      }
+
+      struct cJSON* gui = cJSON_GetObjectItem(json, "gui");
+      if (cJSON_IsBool(gui)) {
+        printf("GUI: %u \n", gui->valueint);
+      }
+
+      struct cJSON* hard_mode = cJSON_GetObjectItem(json, "hard_mode");
+      if (cJSON_IsBool(hard_mode)) {
+        printf("Hard mode: %u \n", hard_mode->valueint);
+      }
+
+      struct cJSON* language = cJSON_GetObjectItem(json, "language");
+      if (cJSON_IsNumber(language)) {
+        printf("Language: %u", language->valueint);
+      }
+
+    } else {
+      const char *error_ptr = cJSON_GetErrorPtr();
+      if (error_ptr) {
+        fprintf(stderr, "[ColoniaC]: cJSON error before: %s \n", error_ptr);
+      }
+    }
+  } else {
+    fprintf(stderr, "[ColoniaC]: Failed to load config.json");
+  }
+  CONFIG.FILEPATH_RSRC = str_concat_new(CONFIG.FILEPATH_ROOT, "resources/");
+}
 
 int main(void) {
   srand(time(NULL));
-
-  FILEPATH_RSRC = (char*) calloc(128, sizeof(char));
-  FILEPATH_RSRC = str_concat_new(FILEPATH_RSRC, "resources/");
+  parse_config_file();
 
   // TODO: Starting screen with cool logotype and load/save, name city screens
   // TODO: Add help flag with descriptions
@@ -1189,7 +1258,7 @@ int main(void) {
  
   // OpenGL
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-  glewExperimental = true;
+  glewExperimental = true; 
   if (glewInit() != GLEW_OK) {
     fprintf(stderr, "Error could not initalize GLEW \n");
     return -1;
@@ -1204,11 +1273,11 @@ int main(void) {
     nk_sdl_font_stash_begin(&atlas);
     const float FONT_HEIGHT = 15.0f;
     const char* font_name = "fonts/CONSTANTINE/Constantine.ttf";
-    const char* font_filepath = str_concat_new(FILEPATH_RSRC, font_name);
+    const char* font_filepath = str_concat_new(CONFIG.FILEPATH_RSRC, font_name);
     struct nk_font* font = nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
     if (font_filepath) { free((void*) font_filepath); }
     if (font == NULL) {
-      fprintf(stderr, "Could not load custom font.");
+      fprintf(stderr, "Could not load custom font. \n");
       return -1;
     }
     nk_sdl_font_stash_end();
@@ -1221,7 +1290,7 @@ int main(void) {
 
   // NOTE: _new in the function name indicates that the callee is responsible for the returned pointers lifetime
   const char* icon_name = "icons/greek-temple.png";
-  const char* filepath  = str_concat_new(FILEPATH_RSRC, icon_name);
+  const char* filepath  = str_concat_new(CONFIG.FILEPATH_RSRC, icon_name);
   icon = nk_image_load(filepath);
   if (filepath) { free((void*) filepath); }
 #endif
@@ -1538,6 +1607,7 @@ int main(void) {
     }
     #endif
   }
-  if (FILEPATH_RSRC) { free((void*) FILEPATH_RSRC); }
+  if (CONFIG.FILEPATH_ROOT) { free((void*) CONFIG.FILEPATH_ROOT); }
+  if (CONFIG.FILEPATH_RSRC) { free((void*) CONFIG.FILEPATH_RSRC); }
   return 0;
 }

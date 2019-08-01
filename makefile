@@ -14,4 +14,4 @@ else
 endif
 
 default:
-	$(CC) $(CFLAGS) -o colonia main.c $(LIBS)
+	$(CC) $(CFLAGS) -o colonia cJSON.c main.c $(LIBS)
