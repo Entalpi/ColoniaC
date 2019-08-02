@@ -1151,27 +1151,39 @@ struct nk_image nk_image_load(const char* filename) {
 }
 
 // TODO:
-void open_gui_quit_menu(const struct City* c, struct nk_context* ctx) {
+void gui_quit_menu(const struct City* c, struct nk_context* ctx) {
   assert(c);
   assert(ctx);
 }
 
+void gui_construction_menu(const struct City* c, struct nk_context* ctx) {
+  // TODO: ...
+}
+
+/// GUI specific resources initialized once at startup
+static struct {
+  struct nk_image policy_icon;
+  struct nk_image construction_icon;
+} GUI;
+
 // Display graphical-based user interface (GUI)
 void update_gui(const struct City* c, struct nk_context* ctx) {
   // Main window
-  const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_BORDER | NK_WINDOW_MOVABLE;
-  const char* main_win_title = c->name;
+  const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
+  const char* main_win_title = c->name; // TODO: Add date in window title
   if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400), main_win_flags)) {
-    nk_layout_row_static(ctx, 50, 100, 4);
-
-    nk_text(ctx, "Population", 10, NK_TEXT_ALIGN_LEFT);
-
-    if (nk_button_label(ctx, "Policies")) {
-      printf("TODO");
+    nk_layout_row_static(ctx, 50, 100, 3);
+    
+    if (nk_button_label(ctx, "Construction")) {
+      gui_construction_menu(c, ctx);
     }
 
-    if (nk_button_label(ctx, "Constructions")) {
-      printf("TODO");
+    if (nk_button_label(ctx, "Construction")) {
+      // TODO: ...
+    }
+
+    if (nk_button_image(ctx, GUI.construction_icon)) {
+      // TODO: ...
     }
   }
   nk_end(ctx);
@@ -1185,15 +1197,13 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
 #endif
 
 /// Game configuration initialized once at startup
-struct Config {
+static struct {
   char* FILEPATH_ROOT;
   char* FILEPATH_RSRC;
   bool GUI;
   bool HARD_MODE;
   int LANGUAGE;
-};
-
-static struct Config CONFIG;
+} CONFIG;
 
 // Parses the config.json at the project root and inits the Config struct at startup
 void parse_config_file() {
@@ -1282,11 +1292,10 @@ int main(void) {
     nk_sdl_font_stash_begin(&atlas);
     nk_sdl_font_stash_end();
   }
-
-  // NOTE: _new in the function name indicates that the callee is responsible for the returned pointers lifetime
+ 
   const char* icon_name = "icons/greek-temple.png";
   const char* filepath  = str_concat_new(CONFIG.FILEPATH_RSRC, icon_name);
-  icon = nk_image_load(filepath);
+  GUI.construction_icon = nk_image_load(filepath);
   if (filepath) { free((void*) filepath); }
 #endif
 
@@ -1534,7 +1543,8 @@ int main(void) {
       if (evt.type == SDL_KEYDOWN) {
         switch (evt.key.keysym.sym) {
         case SDLK_ESCAPE:
-          open_gui_quit_menu(&cities[cidx], ctx);
+          gui_quit_menu(&cities[cidx], ctx);
+          return 0;
           break;
         case SDLK_SPACE:
           if (simulation_speed == 0) {
