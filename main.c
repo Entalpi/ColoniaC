@@ -429,58 +429,99 @@ static inline bool is_winter(const struct Date *date) {
 
 enum CapacityType { Political = 0, Military = 1, Civic = 1 };
 
-const char *capacity_str(const enum CapacityType type) {
+const char *lut_capacity_str(const enum CapacityType type) {
   static const char *strs[3] = {"Political", "Military", "Civic"};
   return strs[type];
 }
 
 enum FarmProduceType { Grapes = 0, Wheat = 1, NUMBER_OF_PRODUCE };
 
-const char *farm_produce_str(const enum FarmProduceType type) {
+const char *lut_farm_produce_str(const enum FarmProduceType type) {
   static const char *strs[2] = {"Grapes", "Wheat"};
   return strs[type];
 }
 
-// TODO: Prefix all lookup functions (functions with tables of data) with lut_* 
-
-// TODO: Add an event log
-// Event: "Our scouts report that barbarians are gathering under the cmd of
-// <BARBARIAN-CHIEF-NAME>" Housing? Water? Aqueducts and baths? Diseases? Food
-// spoiling? Food production should vary with seasons
+// Ring buffer with strings basically
 #define EVENTLOG_CAPACITY 10
 struct EventLog {
   char** lines;
-  uint32_t curr_line;
+  int32_t curr_line; // Curr line for pushing msgs (a.k.a p(ush)) -1 == empty
+  int32_t read_line; // Curr line for reading msgs (a.k.a r(ead)) -1 == empty
   const uint32_t capacity;
 };
 
 struct EventLog eventlog_new() {
   struct EventLog log = {.capacity = EVENTLOG_CAPACITY};
-  log.lines = (char**) calloc(1, EVENTLOG_CAPACITY);
-  log.curr_line = 0;
+  log.lines = (char**) calloc(log.capacity, sizeof(char*));
+  log.curr_line = -1;
+  log.read_line = -1;
   return log;
 }
 
+// FIXME: EventLog ring buffer printout does not print in the correct order
+// Should print [oldest msg ... least oldest msg] but prints [0 ... X], [X + 1, 2X], etc ...
+void eventlog_rewind(struct EventLog* log) {
+  log->read_line = -1;
+}
+
+// Adds msg to the eventlog by copying over the string
 void eventlog_add_msg(struct EventLog* log, const char* msg) {
-  if (log->lines[log->curr_line] != NULL) {
-    free(log->lines[log->curr_line]);
-  }
+  assert(log);
+  assert(msg);
 
   log->curr_line = (log->curr_line + 1) % log->capacity;
+
+  if (log->lines[log->curr_line] != NULL) {
+    free(log->lines[log->curr_line]);
+    log->lines[log->curr_line] = NULL;
+  }
+
+  if (log->curr_line == log->read_line) {
+    log->read_line = (log->read_line + 1) % log->capacity;
+  }
+
+  const size_t len = strlen(msg) + 1;
+  log->lines[log->curr_line] = (char*) calloc(len, sizeof(char));
   strcpy(log->lines[log->curr_line], msg);
 }
 
 void eventlog_clear(struct EventLog* log) {
+  assert(log);
   for (size_t i = 0; i < log->capacity; i++) {
     if (log->lines[i]) {
       free(log->lines[i]);
+      log->lines[i] = NULL;
     }
   }
-  log->curr_line = 0;
+  log->curr_line = -1;
+  log->read_line = -1;
 }
 
-void eventlog_print(void) {
-  // TODO: Implement ...  
+bool eventlog_next_msg(struct EventLog* log, char** msg) {
+  assert(log);
+  assert(log->lines);
+  assert(msg);
+
+  // empty ring
+  if (log->curr_line == -1) {
+    return false;
+  }
+
+  const uint32_t nxt_msg_line = (log->read_line + 1) % log->capacity;
+
+  // did reach end of ring
+  if (log->read_line == log->curr_line) {
+    eventlog_rewind(log);
+    // ring not full must return to start at -1 (0) instead of at p + 1
+    if (log->lines[log->read_line] == NULL) {
+      log->read_line = -1;
+    }
+    return false;
+  }
+
+  *msg = log->lines[nxt_msg_line];
+  log->read_line = nxt_msg_line;
+  return true;
 }
 
 struct FarmArgument {
@@ -556,6 +597,7 @@ struct City {
   struct Policy *policies;
   size_t num_policies;
   size_t num_policies_capacity;
+  struct EventLog* log;
 };
 
 #define FOREVER -1
@@ -640,6 +682,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
 
   memset(c1, 0, sizeof(struct City)); // Reset next state
 
+  // NOTE: Move shared resources
   c1->name = c->name;
   c1->num_effects = c->num_effects;
   c1->effects = c->effects;
@@ -649,6 +692,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->constructions = c->constructions;
   c1->land_area = c->land_area;
   c1->produce_values = c->produce_values;
+  c1->log = c->log;
 
   // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
@@ -768,6 +812,14 @@ void land_tax_tick_effect(struct Effect *e, const struct City *c,
 
 void insula_tick_effect(struct Effect* e, const struct City* c, struct City* c1) {
   // TODO: Insula tick effect
+}
+
+void event_log_test_effect(struct Effect* e, const struct City* c, struct City* c1) {
+  static char msg[32];
+  static int i = 1;
+  sprintf(msg, "Message #%u", i);
+  eventlog_add_msg(c->log, msg);
+  i++;
 }
 
 // TODO: Expand this to a decision tree and then a story in which you either
@@ -979,7 +1031,7 @@ void policy_menu(struct City *c) {
 
       if (i == selector && c->policies[i].num_effects > 0) {
         wmvclrprintw(win, s + i + offset, 1, "[%s]: %s (%u cost)",
-                     capacity_str(c->policies[i].type),
+                     lut_capacity_str(c->policies[i].type),
                      c->policies[i].effect[hselector].name_str,
                      c->policies[i].cost);
 
@@ -1156,8 +1208,28 @@ void gui_quit_menu(const struct City* c, struct nk_context* ctx) {
   assert(ctx);
 }
 
-void gui_construction_menu(const struct City* c, struct nk_context* ctx) {
-  // TODO: ...
+void gui_construction_menu(const struct City *c, struct nk_context* ctx) {
+  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_CLOSABLE;
+  if (nk_begin(ctx, "Construction", nk_rect(200, 200, 200, 200), win_flags)) {
+    for (size_t i = 0; i < c->num_construction_projects; i++) {
+      
+    }
+  }
+  nk_end(ctx);
+} 
+
+void gui_event_log(const struct City* c, struct nk_context* ctx) {
+  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER |
+                             NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
+  if (nk_begin(ctx, "Event log", nk_rect(50, 600, 600, 400), win_flags)) {
+    nk_button_label(ctx, "HELLO");
+    char* msg = NULL;
+    while (eventlog_next_msg(c->log, &msg)) {
+      nk_layout_row_dynamic(ctx, 0.0f, 1);
+      nk_label(ctx, msg, NK_TEXT_ALIGN_LEFT);
+    }
+  }
+  nk_end(ctx);
 }
 
 /// GUI specific resources initialized once at startup
@@ -1168,31 +1240,37 @@ static struct {
 
 // Display graphical-based user interface (GUI)
 void update_gui(const struct City* c, struct nk_context* ctx) {
+  // NOTE: Nuklear does not allow nested windows this is a work-around.
+  static bool open_construction_window = false;
+  static bool open_event_log_window    = false;
+
   // Main window
   const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
   const char* main_win_title = c->name; // TODO: Add date in window title
-  if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400), main_win_flags)) {
-    nk_layout_row_static(ctx, 50, 100, 3);
-    
-    if (nk_button_label(ctx, "Construction")) {
-      gui_construction_menu(c, ctx);
+  if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400), main_win_flags)) {  
+    nk_layout_row_static(ctx, 50, 100, 4);
+
+    if (nk_button_label(ctx, "Military")) {
+      // TODO: ...
     }
 
-    if (nk_button_label(ctx, "Construction")) {
-      // TODO: ...
+    if (nk_button_label(ctx, "Event log")) {
+      open_event_log_window = true;
     }
 
     if (nk_button_image(ctx, GUI.construction_icon)) {
-      // TODO: ...
+      open_construction_window = true;
     }
   }
   nk_end(ctx);
 
-  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER | NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
-  if (nk_begin(ctx, "Event log", nk_rect(50, 600, 600, 100), win_flags)) {
-    nk_text(ctx, "HELLO", 10, 0);
+  if (open_construction_window) {
+    gui_construction_menu(c, ctx);
   }
-  nk_end(ctx);
+
+  if (open_event_log_window) {
+    gui_event_log(c, ctx);
+  }
 }
 #endif
 
@@ -1208,6 +1286,7 @@ static struct {
 // Parses the config.json at the project root and inits the Config struct at startup
 void parse_config_file() {
   const char* raw_json = open_file("config.json");
+
   if (raw_json) {      
     cJSON* json = cJSON_Parse(raw_json);
 
@@ -1322,6 +1401,8 @@ int main(void) {
   city->produce_values = (float*) calloc(sizeof(float), NUMBER_OF_PRODUCE);
   city->produce_values[Grapes] = 0.35f;
   city->produce_values[Wheat]  = 0.45f;
+  struct EventLog log = eventlog_new();
+  city->log = &log;
 
   struct Effect aqueduct_construction_effect = {
       .name_str = "Aqueduct",
@@ -1488,6 +1569,11 @@ int main(void) {
   colonia_capacity.description_str = "Established colonia.";
   colonia_capacity.tick_effect = colonia_capacity_tick_effect;
 
+  struct Effect event_log_tester = {.duration = FOREVER};
+  event_log_tester.description_str = "Testing the event log";
+  event_log_tester.tick_effect = event_log_test_effect;
+
+  city_add_effect(city, event_log_tester);
   city_add_effect(city, pops_food_eating);
   city_add_effect(city, emperor_gold_demands);
   city_add_effect(city, building_maintenance);
