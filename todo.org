@@ -17,7 +17,6 @@ Gameplay components
  ... murders of politicians (decreases polticla capacity permentanly)
  ... 
 
-
 ** Constructions
 
 ** Gold
@@ -31,7 +30,7 @@ Gameplay components
 Feedback chains
 
  - Short
-
+) 
 
  - Medium
 ) Unlocking new constructions enables progression
@@ -55,7 +54,7 @@ Medium-term goals?
          ... so that I can fund the war effort in the against Carthage
 Long-term goals?
 - Ex #1) Preventing the collapse of Rome (as a nation)
-
+  
 * TODOs of ColoniaC implementation-wise
 ** TODO: Starting screen with cool logotype and load/save, name city, etc
 ** TODO: Add help flag with descriptions
@@ -85,5 +84,6 @@ Long-term goals?
 ** TODO: Binary load from file of gamestate
 ** TODO: JSON save to file of gamestate
 ** TODO: JSON load from file of gamestate
+** TODO: Generate random consol names with the date string (get_year_str)  
 
 * TODOs for today
