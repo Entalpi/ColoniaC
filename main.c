@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <ncurses.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -8,7 +9,6 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
-#include <errno.h>
 
 // NOTE: Choice of UI: terminal or GUI based
 #define USER_INTERFACE_GUI
@@ -62,28 +62,34 @@
 
 /***** string utility functions *****/
 // Returns callee owned ptr to the concatenation of lhs & rhs, NULL on failure
-char* str_concat_new(const char* lhs, const char* rhs) {
-  if (lhs == NULL || rhs == NULL) { return NULL; }
+char *str_concat_new(const char *lhs, const char *rhs) {
+  if (lhs == NULL || rhs == NULL) {
+    return NULL;
+  }
   const size_t lhs_lng = strlen(lhs);
   const size_t rhs_lng = strlen(rhs);
   const size_t new_lng = lhs_lng + rhs_lng;
-  char* new_str = (char*) calloc(new_lng, sizeof(char));
+  char *new_str = (char *)calloc(new_lng, sizeof(char));
   strncpy(new_str, lhs, lhs_lng);
   strncpy(&new_str[lhs_lng], rhs, rhs_lng);
-  return new_str; 
+  return new_str;
 }
 
 /***** file utility functions *****/
 // Returns callee owned ptr to file contents, NULL on failure
-const char* open_file(const char* filepath) {
-  if (filepath == NULL) { return NULL; }
-  FILE* f = fopen(filepath, "r");
-  if (f == NULL) { return NULL; }
+const char *open_file(const char *filepath) {
+  if (filepath == NULL) {
+    return NULL;
+  }
+  FILE *f = fopen(filepath, "r");
+  if (f == NULL) {
+    return NULL;
+  }
   fseek(f, 0, SEEK_END);
   const size_t size = ftell(f);
-  const char* file_contents = (char*) calloc(size, sizeof(char));
+  const char *file_contents = (char *)calloc(size, sizeof(char));
   rewind(f);
-  fread((void*) file_contents, 1, size, f);
+  fread((void *)file_contents, 1, size, f);
   fclose(f);
   return file_contents;
 }
@@ -444,7 +450,7 @@ const char *lut_farm_produce_str(const enum FarmProduceType type) {
 // Ring buffer with strings basically
 #define EVENTLOG_CAPACITY 10
 struct EventLog {
-  char** lines;
+  char **lines;
   int32_t curr_line; // Curr line for pushing msgs (a.k.a p(ush)) -1 == empty
   int32_t read_line; // Curr line for reading msgs (a.k.a r(ead)) -1 == empty
   const uint32_t capacity;
@@ -452,20 +458,19 @@ struct EventLog {
 
 struct EventLog eventlog_new() {
   struct EventLog log = {.capacity = EVENTLOG_CAPACITY};
-  log.lines = (char**) calloc(log.capacity, sizeof(char*));
+  log.lines = (char **)calloc(log.capacity, sizeof(char *));
   log.curr_line = -1;
   log.read_line = -1;
   return log;
 }
 
 // FIXME: EventLog ring buffer printout does not print in the correct order
-// Should print [oldest msg ... least oldest msg] but prints [0 ... X], [X + 1, 2X], etc ...
-void eventlog_rewind(struct EventLog* log) {
-  log->read_line = -1;
-}
+// Should print [oldest msg ... least oldest msg] but prints [0 ... X], [X + 1,
+// 2X], etc ...
+void eventlog_rewind(struct EventLog *log) { log->read_line = -1; }
 
 // Adds msg to the eventlog by copying over the string
-void eventlog_add_msg(struct EventLog* log, const char* msg) {
+void eventlog_add_msg(struct EventLog *log, const char *msg) {
   assert(log);
   assert(msg);
 
@@ -481,11 +486,11 @@ void eventlog_add_msg(struct EventLog* log, const char* msg) {
   }
 
   const size_t len = strlen(msg) + 1;
-  log->lines[log->curr_line] = (char*) calloc(len, sizeof(char));
+  log->lines[log->curr_line] = (char *)calloc(len, sizeof(char));
   strcpy(log->lines[log->curr_line], msg);
 }
 
-void eventlog_clear(struct EventLog* log) {
+void eventlog_clear(struct EventLog *log) {
   assert(log);
   for (size_t i = 0; i < log->capacity; i++) {
     if (log->lines[i]) {
@@ -497,7 +502,7 @@ void eventlog_clear(struct EventLog* log) {
   log->read_line = -1;
 }
 
-bool eventlog_next_msg(struct EventLog* log, char** msg) {
+bool eventlog_next_msg(struct EventLog *log, char **msg) {
   assert(log);
   assert(log->lines);
   assert(msg);
@@ -526,7 +531,7 @@ bool eventlog_next_msg(struct EventLog* log, char** msg) {
 
 struct FarmArgument {
   float tax_percentage; // [0, 1] in land tax
-  size_t area; // Land area used (jugerum, cirka 0.6 hectare)
+  size_t area;          // Land area used (jugerum, cirka 0.6 hectare)
   enum FarmProduceType produce;
 };
 
@@ -561,8 +566,8 @@ struct City {
   float food_production; // TODO: Food production / day in terms of calories?
   float food_usage;      // Higher usage than production means importation
   // Gold
-  float gold;            // Pounds of gold (kg??) (negative, debt??)
-  float gold_usage;      // Income / Lose
+  float gold;       // Pounds of gold (kg??) (negative, debt??)
+  float gold_usage; // Income / Lose
   /// Capacity
   uint32_t political_capacity;
   uint32_t political_usage;
@@ -597,7 +602,7 @@ struct City {
   struct Policy *policies;
   size_t num_policies;
   size_t num_policies_capacity;
-  struct EventLog* log;
+  struct EventLog *log;
 };
 
 #define FOREVER -1
@@ -805,16 +810,19 @@ void senate_house_tick_effect(struct Effect *e, const struct City *c,
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
-  const struct FarmArgument *arg = (struct FarmArgument*) e->arg;
+  const struct FarmArgument *arg = (struct FarmArgument *)e->arg;
   const float land_tax_price = 0.2f;
-  c1->gold_usage -= land_tax_price * arg->area * arg->tax_percentage; // TODO: Gold income perhaps ... ?
+  c1->gold_usage -= land_tax_price * arg->area *
+                    arg->tax_percentage; // TODO: Gold income perhaps ... ?
 }
 
-void insula_tick_effect(struct Effect* e, const struct City* c, struct City* c1) {
+void insula_tick_effect(struct Effect *e, const struct City *c,
+                        struct City *c1) {
   // TODO: Insula tick effect
 }
 
-void event_log_test_effect(struct Effect* e, const struct City* c, struct City* c1) {
+void event_log_test_effect(struct Effect *e, const struct City *c,
+                           struct City *c1) {
   static char msg[32];
   static int i = 1;
   sprintf(msg, "Message #%u", i);
@@ -1094,7 +1102,8 @@ void policy_menu(struct City *c) {
 
 void help_menu(struct City *c) {
   // TODO: Implement help menu
-  // TODO: There should be a explain word/concept discovery functionality like Emacs's explain-function
+  // TODO: There should be a explain word/concept discovery functionality like
+  // Emacs's explain-function
 }
 
 /// Display terminal-based user interface
@@ -1175,55 +1184,58 @@ void update_tui(const struct City *c) {
 
 #ifdef USER_INTERFACE_GUI
 // NOTE: Updated whenever the window changes size
-static int WINDOW_WIDTH  = 1280;
+static int WINDOW_WIDTH = 1280;
 static int WINDOW_HEIGHT = 1080;
 
-void glfw_error_callback(int e, const char* d) {
+void glfw_error_callback(int e, const char *d) {
   fprintf(stderr, "Error %d: %s", e, d);
 }
 
-struct nk_image nk_image_load(const char* filename) {
+struct nk_image nk_image_load(const char *filename) {
   int x, y, n;
   GLuint tex;
-  unsigned char* data = stbi_load(filename, &x, &y, &n, 0);
+  unsigned char *data = stbi_load(filename, &x, &y, &n, 0);
   if (!data) {
     fprintf(stderr, "[SDL]: failed to load image: %s", filename);
   }
 
   glGenTextures(1, &tex);
   glBindTexture(GL_TEXTURE_2D, tex);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                  GL_LINEAR_MIPMAP_NEAREST);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                  GL_LINEAR_MIPMAP_NEAREST);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               data);
   glGenerateMipmap(GL_TEXTURE_2D);
   stbi_image_free(data);
   return nk_image_id((int)tex);
 }
 
 // TODO:
-void gui_quit_menu(const struct City* c, struct nk_context* ctx) {
+void gui_quit_menu(const struct City *c, struct nk_context *ctx) {
   assert(c);
   assert(ctx);
 }
 
-void gui_construction_menu(const struct City *c, struct nk_context* ctx) {
-  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_CLOSABLE;
+void gui_construction_menu(const struct City *c, struct nk_context *ctx) {
+  const nk_flags win_flags =
+      NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE | NK_WINDOW_CLOSABLE;
   if (nk_begin(ctx, "Construction", nk_rect(200, 200, 200, 200), win_flags)) {
     for (size_t i = 0; i < c->num_construction_projects; i++) {
-      
     }
   }
   nk_end(ctx);
-} 
+}
 
-void gui_event_log(const struct City* c, struct nk_context* ctx) {
+void gui_event_log(const struct City *c, struct nk_context *ctx) {
   const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER |
                              NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
   if (nk_begin(ctx, "Event log", nk_rect(50, 600, 600, 400), win_flags)) {
     nk_button_label(ctx, "HELLO");
-    char* msg = NULL;
+    char *msg = NULL;
     while (eventlog_next_msg(c->log, &msg)) {
       nk_layout_row_dynamic(ctx, 0.0f, 1);
       nk_label(ctx, msg, NK_TEXT_ALIGN_LEFT);
@@ -1239,15 +1251,17 @@ static struct {
 } GUI;
 
 // Display graphical-based user interface (GUI)
-void update_gui(const struct City* c, struct nk_context* ctx) {
+void update_gui(const struct City *c, struct nk_context *ctx) {
   // NOTE: Nuklear does not allow nested windows this is a work-around.
   static bool open_construction_window = false;
-  static bool open_event_log_window    = false;
+  static bool open_event_log_window = false;
 
   // Main window
-  const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
-  const char* main_win_title = c->name; // TODO: Add date in window title
-  if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400), main_win_flags)) {  
+  const nk_flags main_win_flags =
+      NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
+  const char *main_win_title = c->name; // TODO: Add date in window title
+  if (nk_begin(ctx, main_win_title, nk_rect(50, 50, 400, 400),
+               main_win_flags)) {
     nk_layout_row_static(ctx, 50, 100, 4);
 
     if (nk_button_label(ctx, "Military")) {
@@ -1276,37 +1290,39 @@ void update_gui(const struct City* c, struct nk_context* ctx) {
 
 /// Game configuration initialized once at startup
 static struct {
-  char* FILEPATH_ROOT;
-  char* FILEPATH_RSRC;
+  char *FILEPATH_ROOT;
+  char *FILEPATH_RSRC;
   bool GUI;
   bool HARD_MODE;
   int LANGUAGE;
 } CONFIG;
 
-// Parses the config.json at the project root and inits the Config struct at startup
+// Parses the config.json at the project root and inits the Config struct at
+// startup
 void parse_config_file() {
-  const char* raw_json = open_file("config.json");
+  const char *raw_json = open_file("config.json");
 
-  if (raw_json) {      
-    cJSON* json = cJSON_Parse(raw_json);
+  if (raw_json) {
+    cJSON *json = cJSON_Parse(raw_json);
 
     if (json) {
-      struct cJSON* root_folder = cJSON_GetObjectItemCaseSensitive(json, "root_folder");
+      struct cJSON *root_folder =
+          cJSON_GetObjectItemCaseSensitive(json, "root_folder");
       if (cJSON_IsString(root_folder) && root_folder->valuestring) {
         CONFIG.FILEPATH_ROOT = root_folder->valuestring;
       }
 
-      struct cJSON* gui = cJSON_GetObjectItem(json, "gui");
+      struct cJSON *gui = cJSON_GetObjectItem(json, "gui");
       if (cJSON_IsBool(gui)) {
         printf("GUI: %u \n", gui->valueint);
       }
 
-      struct cJSON* hard_mode = cJSON_GetObjectItem(json, "hard_mode");
+      struct cJSON *hard_mode = cJSON_GetObjectItem(json, "hard_mode");
       if (cJSON_IsBool(hard_mode)) {
         printf("Hard mode: %u \n", hard_mode->valueint);
       }
 
-      struct cJSON* language = cJSON_GetObjectItem(json, "language");
+      struct cJSON *language = cJSON_GetObjectItem(json, "language");
       if (cJSON_IsNumber(language)) {
         printf("Language: %u", language->valueint);
       }
@@ -1330,19 +1346,23 @@ int main(void) {
 #ifdef USER_INTERFACE_GUI
   /* SDL setup */
   SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
-  SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_EVENTS);
-  SDL_GL_SetAttribute (SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-  SDL_GL_SetAttribute (SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
+                      SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_Window* sdl_window = SDL_CreateWindow("ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL |SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window *sdl_window = SDL_CreateWindow(
+      "ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH,
+      WINDOW_HEIGHT,
+      SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_GLContext gl_context = SDL_GL_CreateContext(sdl_window);
   SDL_GetWindowSize(sdl_window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
- 
+
   // OpenGL
   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-  glewExperimental = true; 
+  glewExperimental = true;
   if (glewInit() != GLEW_OK) {
     fprintf(stderr, "Error could not initalize GLEW \n");
     return -1;
@@ -1353,13 +1373,16 @@ int main(void) {
 
   const bool USE_CUSTOM_FONT = true;
   if (USE_CUSTOM_FONT) {
-    struct nk_font_atlas* atlas;
+    struct nk_font_atlas *atlas;
     nk_sdl_font_stash_begin(&atlas);
     const float FONT_HEIGHT = 15.0f;
-    const char* font_name = "fonts/CONSTANTINE/Constantine.ttf";
-    const char* font_filepath = str_concat_new(CONFIG.FILEPATH_RSRC, font_name);
-    struct nk_font* font = nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
-    if (font_filepath) { free((void*) font_filepath); }
+    const char *font_name = "fonts/CONSTANTINE/Constantine.ttf";
+    const char *font_filepath = str_concat_new(CONFIG.FILEPATH_RSRC, font_name);
+    struct nk_font *font =
+        nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
+    if (font_filepath) {
+      free((void *)font_filepath);
+    }
     if (font == NULL) {
       fprintf(stderr, "Could not load custom font. \n");
       return -1;
@@ -1367,15 +1390,17 @@ int main(void) {
     nk_sdl_font_stash_end();
     nk_style_set_font(ctx, &font->handle);
   } else {
-    struct nk_font_atlas* atlas;
+    struct nk_font_atlas *atlas;
     nk_sdl_font_stash_begin(&atlas);
     nk_sdl_font_stash_end();
   }
- 
-  const char* icon_name = "icons/greek-temple.png";
-  const char* filepath  = str_concat_new(CONFIG.FILEPATH_RSRC, icon_name);
+
+  const char *icon_name = "icons/greek-temple.png";
+  const char *filepath = str_concat_new(CONFIG.FILEPATH_RSRC, icon_name);
   GUI.construction_icon = nk_image_load(filepath);
-  if (filepath) { free((void*) filepath); }
+  if (filepath) {
+    free((void *)filepath);
+  }
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
@@ -1398,9 +1423,9 @@ int main(void) {
   city->emmigrationrate = 0.0005f;
   city->immigrationrate = 0.0020f;
   city->land_area = 100;
-  city->produce_values = (float*) calloc(sizeof(float), NUMBER_OF_PRODUCE);
+  city->produce_values = (float *)calloc(sizeof(float), NUMBER_OF_PRODUCE);
   city->produce_values[Grapes] = 0.35f;
-  city->produce_values[Wheat]  = 0.45f;
+  city->produce_values[Wheat] = 0.45f;
   struct EventLog log = eventlog_new();
   city->log = &log;
 
@@ -1430,14 +1455,14 @@ int main(void) {
 
   struct Effect farm_construction_effects[2] = {grape_farm_construction_effect};
 
-  struct Construction farm = {
-      .cost = 2.0f,
-      .construction_time = 7,
-      .maintenance = 0.0f,
-      .name_str = "Farm",
-      .description_str = "Piece of land generating various produce.",
-      .effect = farm_construction_effects,
-      .num_effects = 2};
+  struct Construction farm = {.cost = 2.0f,
+                              .construction_time = 7,
+                              .maintenance = 0.0f,
+                              .name_str = "Farm",
+                              .description_str =
+                                  "Piece of land generating various produce.",
+                              .effect = farm_construction_effects,
+                              .num_effects = 2};
 
   struct Effect basilica_construction_effect = {
       .name_str = "Basilica",
@@ -1535,7 +1560,7 @@ int main(void) {
   insula_construction_effect.tick_effect = insula_tick_effect;
 
   struct Construction insula = {.name_str = "Insula",
-                                 .description_str =
+                                .description_str =
                                     "Apartment block with space for ",
                                 .cost = 10.0f,
                                 .maintenance = 0.05f,
@@ -1582,7 +1607,8 @@ int main(void) {
   /// Policies
   city->num_policies = 0;
   city->political_capacity = 10;
-  city->policies = (struct Policy*) calloc(city->num_policies, sizeof(struct Policy));
+  city->policies =
+      (struct Policy *)calloc(city->num_policies, sizeof(struct Policy));
 
   struct Effect land_tax_effect = {.duration = FOREVER};
   land_tax_effect.tick_effect = land_tax_tick_effect;
@@ -1618,7 +1644,7 @@ int main(void) {
       t0 = t1;
     }
 
-    #ifdef USER_INTERFACE_GUI
+#ifdef USER_INTERFACE_GUI
     /* Input */
     SDL_Event evt;
     nk_input_begin(ctx);
@@ -1663,9 +1689,9 @@ int main(void) {
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
     SDL_GL_SwapWindow(sdl_window);
-    #endif
+#endif
 
-    #ifdef USER_INTERFACE_TERMINAL
+#ifdef USER_INTERFACE_TERMINAL
     werase(root);
     update_tui(&cities[cidx]);
 
@@ -1721,9 +1747,13 @@ int main(void) {
       policy_menu(&cities[cidx]);
       break;
     }
-    #endif
+#endif
   }
-  if (CONFIG.FILEPATH_ROOT) { free((void*) CONFIG.FILEPATH_ROOT); }
-  if (CONFIG.FILEPATH_RSRC) { free((void*) CONFIG.FILEPATH_RSRC); }
+  if (CONFIG.FILEPATH_ROOT) {
+    free((void *)CONFIG.FILEPATH_ROOT);
+  }
+  if (CONFIG.FILEPATH_RSRC) {
+    free((void *)CONFIG.FILEPATH_RSRC);
+  }
   return 0;
 }
