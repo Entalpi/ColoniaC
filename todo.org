@@ -87,3 +87,7 @@ Long-term goals?
 ** TODO: Generate random consol names with the date string (get_year_str)  
 
 * TODOs for today
+
+
+* Bugs
+** Building multiple buildings (5-7 ish) seg. faults 
