@@ -978,8 +978,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
                              arg->effect->name_str) +
                     1;
     char msg[lng];
-    snprintf(msg, lng, "Finished construction of a %s.",
-             arg->effect->name_str);
+    snprintf(msg, lng, "Finished construction of a %s.", arg->effect->name_str);
     eventlog_add_msg(c1->log, msg);
 
     free(e->name_str);
@@ -1001,7 +1000,8 @@ bool build_construction(struct City *c, const struct Construction cp,
     construction->effect = calloc(1, sizeof(struct Effect));
     construction->construction_started = date;
     // Linking the construction and its active effect
-    construction->effect[0] = activated_effect; // TODO: Expand with more than one activated effect
+    construction->effect[0] =
+        activated_effect; // TODO: Expand with more than one activated effect
     construction->num_effects = 1;
 
     int lng = snprintf(NULL, 0, "Building of a %s started ..", cp.name_str) + 1;
@@ -1320,10 +1320,8 @@ struct nk_image nk_image_load(const char *filename) {
   return nk_image_id((int)tex);
 }
 
-// TODO:
-void gui_quit_menu(const struct City *c, struct nk_context *ctx) {
-  assert(c);
-  assert(ctx);
+void gui_construction_help_menu(const struct Construction *con) {
+  // TODO: Implement ...
 }
 
 void gui_construction_menu(struct City *c, struct nk_context *ctx) {
@@ -1332,22 +1330,58 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
   if (nk_begin(ctx, "Construction", nk_rect(200, 500, 800, 300), win_flags)) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Construction projects", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_construction_projects; i++) {
-        int32_t selector =
-            0; // TODO: Implement selection of different building types
         const struct Construction *proj = &c->construction_projects[i];
-        nk_layout_row_dynamic(ctx, 0.0f, 4);
-        nk_label(ctx, proj->name_str, NK_TEXT_ALIGN_LEFT);
-        nk_label(ctx, proj->description_str, NK_TEXT_ALIGN_LEFT);
-        const int lng = snprintf(NULL, 0, "%.2f gold / %.2ld days", proj->cost,
-                                 proj->construction_time) +
-                        1;
+        static const float ratio[6] = {0.15f, 0.05f, 0.35f,
+                                       0.15f, 0.15f, 0.15f};
+        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
+
+        nk_label(ctx, proj->name_str,
+                 NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+
+        if (nk_button_label(ctx, "?")) {
+          gui_construction_help_menu(proj);
+        }
+
+        nk_label(ctx, proj->description_str,
+                 NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+
+        int lng = snprintf(NULL, 0, "%.2f gold", proj->cost) + 1;
         char str[lng];
-        snprintf(str, lng, "%.2f gold / %.2ld days", proj->cost,
-                 proj->construction_time);
-        nk_label(ctx, str, NK_TEXT_ALIGN_CENTERED);
-        if (nk_button_label(ctx, "Build")) {
-          build_construction(c, *proj, proj->effect[selector]);
-          // TODO: Add visual indication or smt to show that building failed or started
+        snprintf(str, lng, "%.2f gold |", proj->cost);
+        nk_label(ctx, str, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
+
+        lng = snprintf(NULL, 0, "%ld days", proj->construction_time) + 1;
+        char strr[lng];
+        snprintf(strr, lng, "%ld days", proj->construction_time);
+        nk_label(ctx, strr, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
+
+        // TODO: Add visual indication or smt to show that building failed
+        // or started
+        if (proj->num_effects == 1) {
+          if (nk_button_label(ctx, "Build")) {
+            build_construction(c, *proj, proj->effect[0]);
+          }
+        } else {
+          // FIXME: GUI nk_menu_begin_label does not have the same background as
+          // nk_label, whats up with that?
+          // TODO: Implement construction type selection menu
+          if (nk_group_begin(ctx, "",
+                             NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
+            nk_layout_row_dynamic(ctx, 0.0f, 1);
+
+            if (nk_menu_begin_label(ctx, "Build", NK_TEXT_ALIGN_CENTERED,
+                                    nk_vec2(200, 400))) {
+              for (size_t j = 0; j < proj->num_effects; j++) {
+                if (nk_button_label(ctx, proj->effect[j].name_str)) {
+                  build_construction(c, *proj, proj->effect[j]);
+                  nk_menu_close(ctx);
+                }
+              }
+
+              nk_menu_end(ctx);
+            }
+            nk_group_end(ctx);
+          }
         }
       }
       nk_tree_pop(ctx);
@@ -1368,22 +1402,18 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         nk_label(ctx, str, NK_TEXT_ALIGN_LEFT);
 
         // Construction detail pane
-        nk_menubar_begin(ctx);
-        if (nk_menu_begin_label(ctx, "!", NK_TEXT_ALIGN_RIGHT, nk_vec2(100, 200))) {
+        if (nk_menu_begin_label(ctx, "!", NK_TEXT_ALIGN_RIGHT,
+                                nk_vec2(100, 200))) {
           nk_layout_row_dynamic(ctx, 0.0f, 1);
-
-          if (nk_menu_item_label(ctx, "Demolish", NK_TEXT_ALIGN_CENTERED)) {
-            // TODO: Implement demolishion of constructions (for resources a.k.a
-            // gold)
-          }
-
+          // TODO: Implement demolishion of constructions (for resources aka
+          // gold)
           if (nk_menu_item_label(ctx, "?", NK_TEXT_ALIGN_CENTERED)) {
             // TODO: Implement information pane about constructions (useful for
             // micromanagement)
           }
-        }
-        nk_menubar_end(ctx);
 
+          nk_menu_end(ctx);
+        }
       }
       nk_tree_pop(ctx);
     }
@@ -1413,8 +1443,8 @@ void gui_help_menu(struct City *c, struct nk_context *ctx) {
   // TODO: Help menu is used to look things up and search for in-game things
 }
 
-// TODO: Esc should open this menu
-void gui_menu(struct City *c, struct nk_context *ctx) {
+// TODO: Display gametime, something fun in the ingame menu
+void gui_ingame_menu(struct City *c, struct nk_context *ctx) {
   const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER |
                              NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
   const uint32_t win_width = 500;
@@ -1444,22 +1474,31 @@ void gui_menu(struct City *c, struct nk_context *ctx) {
 static struct {
   struct nk_image policy_icon;
   struct nk_image construction_icon;
+#define WINDOW_NAME_CONSTRUCTION "construction_window"
+#define WINDOW_NAME_EVENTLOG "eventlog_window"
+#define WINDOW_NAME_HELP "help_window"
+#define WINDOW_NAME_MILITARY "military_window"
+#define WINDOW_NAME_DIPLOMATIC "diplomatic_window"
+#define WINDOW_NAME_CIVIC "civic_window"
 } GUI;
 
 // ----------- Custom GUI widgets  -----------
 
-void gui_widget_capacity(struct City*c, struct nk_context* ctx, const char* name) {
+void gui_widget_capacity(struct City *c, struct nk_context *ctx,
+                         const char *name) {
   if (nk_group_begin(ctx, name, NK_WINDOW_NO_SCROLLBAR)) {
 
     static const float ratio[3] = {0.25f, 0.5f, 0.25f};
     nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
     nk_spacing(ctx, 1);
 
-    if (nk_group_begin(ctx, "inner", NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER)) {
+    if (nk_group_begin(ctx, "inner",
+                       NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER)) {
 
-      nk_layout_row_dynamic(ctx, 35.0f, 1);
-      nk_label(ctx, name, NK_TEXT_ALIGN_CENTERED);
+      nk_layout_row_dynamic(ctx, 0.0f, 2);
+      nk_label(ctx, name, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
       nk_label(ctx, "1 / 3", NK_TEXT_ALIGN_CENTERED);
+
       nk_group_end(ctx);
     }
 
@@ -1469,6 +1508,7 @@ void gui_widget_capacity(struct City*c, struct nk_context* ctx, const char* name
   }
 }
 
+// TODO: Window toggling does not work properly
 // TODO: Remember the windows placement between opening & closing
 // Display graphical-based user interface (GUI)
 void update_gui(struct City *c, struct nk_context *ctx) {
@@ -1498,7 +1538,7 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     nk_label(ctx, str, NK_TEXT_ALIGN_CENTERED);
 
     nk_layout_row_dynamic(ctx, 0.0f, 1);
-    nk_slider_int(ctx, 0, (int*) (&simulation_speed), 11, 1);
+    nk_slider_int(ctx, 0, (int *)(&simulation_speed), 11, 1);
     nk_layout_row_dynamic(ctx, 0.0f, 10);
     for (size_t i = 0; i < 10; i++) {
       char str[4];
@@ -1533,17 +1573,17 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     }
 
     // Capacities
-    nk_layout_row_dynamic(ctx, 35, 3);
+    nk_layout_row_dynamic(ctx, 0.0f, 3);
     gui_widget_capacity(c, ctx, "Military");
     gui_widget_capacity(c, ctx, "Civic");
     gui_widget_capacity(c, ctx, "Diplomatic");
 
     // Other vitals
-    nk_layout_row_dynamic(ctx, 35, 2);
+    nk_layout_row_dynamic(ctx, 0.0f, 2);
     gui_widget_capacity(c, ctx, "Gold");
     gui_widget_capacity(c, ctx, "Food");
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MINIMIZED)) {
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MAXIMIZED)) {
       nk_layout_row_dynamic(ctx, 0.0f, 1);
       nk_label(ctx, "Population: 1'000", NK_TEXT_ALIGN_LEFT);
 
@@ -1583,6 +1623,8 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
   if (open_help_window) {
     gui_help_menu(c, ctx);
+    // nk_window_is_closed(struct nk_context *, const char *)
+    // nk_tooltip(struct nk_context *, const char *)
   }
 
   if (open_military_window) {
@@ -1828,15 +1870,13 @@ int main(void) {
       .duration = FOREVER,
       .tick_effect = coin_mint_tick_effect};
 
-  struct Construction coin_mint = {
-      .cost = 30.0f,
-      .maintenance = 0.1f,
-      .construction_time = 2 * 30,
-      .name_str = "Coin mint",
-      .description_str =
-          "Produces coinage, ensures commerce is not disrupted by war.",
-      .effect = &coin_mint_construction_effect,
-      .num_effects = 1};
+  struct Construction coin_mint = {.cost = 30.0f,
+                                   .maintenance = 0.1f,
+                                   .construction_time = 2 * 30,
+                                   .name_str = "Coin mint",
+                                   .description_str = "Produces coinage.",
+                                   .effect = &coin_mint_construction_effect,
+                                   .num_effects = 1};
 
   const size_t num_temples = 2;
   struct Effect *temple_effects =
@@ -1983,7 +2023,7 @@ int main(void) {
       if (evt.type == SDL_KEYDOWN) {
         switch (evt.key.keysym.sym) {
         case SDLK_ESCAPE:
-          gui_quit_menu(&cities[cidx], ctx);
+          gui_ingame_menu(&cities[cidx], ctx);
           return 0;
           break;
         case SDLK_SPACE:
