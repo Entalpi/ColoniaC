@@ -1,5 +1,9 @@
 CC = gcc
-CFLAGS = -std=c11 -g -Wall -pedantic
+
+CFLAGS = -std=c11 -Wall -pedantic
+# CFLAGS += -g # Portable debugging
+CFLAGS += -ggdb3 -gstabs+ # More debug info for GDB by GCC
+
 LIBS = -lm -lncurses -lGLEW -lSDL2
 
 # Non-portable way of obtaining the OS type ...
