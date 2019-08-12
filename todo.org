@@ -64,7 +64,7 @@ Medium-term goals?
 - Ex #1) By implementing the policy our revenue will grow ... 
          ... so that I can fund the war effort in the against Carthage
 Long-term goals?
-- Ex #1) Preventing the collapse of Rome (as a nation)
+- Ex #1) Preventing the collapse of Rome (as a nation)?
 
 ** Progression
 1. More power points = Able to do MORE (actions).
@@ -72,7 +72,7 @@ Long-term goals?
 - Unlocks new policies, constructions, etc.
   
 * TODOs of ColoniaC implementation-wise
-** TODO Starting screen with cool logotype and load/save, name city, etc
+** TODO Starting screen with cool logotype and load/save, name city, roman quotes, etc
 ** TODO Add help flag with descriptions
 ** TODO Add help documentation lookup functionality in help menu
 ** TODO Hard mode = Everything is in Latin with Roman measurements, enjoy.
@@ -102,6 +102,8 @@ Long-term goals?
 ** TODO JSON load from file of gamestate
 ** TODO Generate random consol names with the date string (get_year_str)  
 
+** TODO Market days implementation
+** TODO Roman school (increases income)
 
 * Bugs
 ** Building multiple buildings (5-7 ish) seg. faults. Does not occur when fast speed is on..
