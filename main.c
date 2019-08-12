@@ -2142,5 +2142,6 @@ int main(void) {
   if (CONFIG.FILEPATH_RSRC) {
     free((void *)CONFIG.FILEPATH_RSRC);
   }
+  // TODO: Make sure to clean up some library calls in order to make valgrinding this a bit easier later on
   return 0;
 }
