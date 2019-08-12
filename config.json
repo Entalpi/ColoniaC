@@ -1,6 +1,12 @@
 {
-    "root_folder": "/Users/lingtorp/repos/colonia/",
-    "gui": true,
+    "root_folder": "/home/alexander/repos/ColoniaC/",
+    "gui": false,
+    "tui": true,
     "hard_mode": false,
-    "language": 0
+    "language": 0,
+    "fullscreen": false,
+    "resolution": {
+        "width": 1280,
+        "height": 1080
+    }
 }
