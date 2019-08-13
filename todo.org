@@ -28,7 +28,7 @@ Gameplay components
 
 ** Policies
    - Affects modifiers in game (tax income percentages, number of markets day in a month, etc)
-     - Ex) Enact public toilet fees
+     - Ex) Enact public toilet fees, 
 
 ** Food
    - Required in order to grow the population (?)
@@ -78,10 +78,9 @@ Long-term goals?
 ** TODO Hard mode = Everything is in Latin with Roman measurements, enjoy.
 ** TODO Roman castrum (inc. military power, population boost, excepts more services, inc. gold)
 ** TODO Roman bath construction
-** TODO Roman amphitheater
-** TODO Coin mint - gold revenue
-** TODO Farms dont produce food in the winter - need to import and thus
-** TODO decrease gold
+** TODO Roman amphitheater (it took Rome a couple of tries to actually create a amphitheater in stone within the city)
+** TODO Coin mint - gold revenue, ensures commerce is not as badly affected by war in the provinces
+** TODO Farms dont produce food in the winter - need to import and thus decrease gold
 ** TODO Different farms (export fruits/etc to other parts of the empire)
 ** TODO Select export/domestic consumption for each farm
 ** TODO Land area limited - increased by political power expenditure by
@@ -100,10 +99,11 @@ Long-term goals?
 ** TODO Binary load from file of gamestate
 ** TODO JSON save to file of gamestate
 ** TODO JSON load from file of gamestate
-** TODO Generate random consol names with the date string (get_year_str)  
+** TODO Generate random consul names with the date string (get_year_str)  
 
 ** TODO Market days implementation
-** TODO Roman school (increases income)
+** TODO Roman school (increases income by having the students pay)
+** TODO Garum factory (?) 
 
 * Bugs
 ** Building multiple buildings (5-7 ish) seg. faults. Does not occur when fast speed is on..
