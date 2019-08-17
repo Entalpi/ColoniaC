@@ -76,6 +76,22 @@ static struct {
 #define SUMMER "summer"
 #define AUTUMN "autumn"
 
+/***** nuklear utility functions *****/
+void nk_format_label(struct nk_context *ctx, const nk_flags align,
+                     const char *format, ...) {
+  va_list args;
+  va_list args_cpy;
+  va_start(args, format);
+  va_copy(args_cpy, args);
+  // NOTE: Copy needed due to vsnprintf modifies its va_list
+  const int lng = vsnprintf(NULL, 0, format, args) + 1;
+  char str[lng];
+  vsnprintf(str, lng, format, args_cpy);
+  nk_label(ctx, str, align);
+  va_end(args);
+  va_end(args_cpy);
+}
+
 /***** string utility functions *****/
 // Returns callee owned ptr to the concatenation of lhs & rhs, NULL on failure
 char *str_concat_new(const char *lhs, const char *rhs) {
@@ -963,10 +979,10 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   c1->gold -= arg->construction_cost; // FIXME: Gold usage instead?
 
-  const int lng = snprintf(NULL, 0, "%ld days left, costing %.2f gold / day",
+  const int lng = snprintf(NULL, 0, "%ld days left, - %.2f gold / day",
                            e->duration, arg->construction_cost) +
                   1;
-  snprintf(e->description_str, lng, "%ld days left, costing %.2f gold / day",
+  snprintf(e->description_str, lng, "%ld days left, - %.2f gold / day",
            e->duration, arg->construction_cost);
 
   if (e->duration == 1) {
@@ -1009,7 +1025,7 @@ bool build_construction(struct City *c, const struct Construction cp,
     snprintf(msg, lng, "Building of a %s started ..", cp.name_str);
     eventlog_add_msg(c->log, msg);
 
-    lng = snprintf(NULL, 0, "9999 days left, costing %.2f / day",
+    lng = snprintf(NULL, 0, "9999 days left, - %.2f / day",
                    construction->construction_cost) +
           1;
     char *description_str =
@@ -1320,8 +1336,15 @@ struct nk_image nk_image_load(const char *filename) {
   return nk_image_id((int)tex);
 }
 
-void gui_construction_help_menu(const struct Construction *con) {
-  // TODO: Implement ...
+// TODO: Does not work ...
+void gui_construction_help_menu(const struct Construction *con,
+                                struct nk_context *ctx) {
+  if (nk_popup_begin(ctx, NK_POPUP_STATIC, con->name_str, 0,
+                     nk_rect(265, 0, 320, 220))) {
+    nk_layout_row_dynamic(ctx, 0.0f, 1);
+    nk_label(ctx, con->description_str, NK_TEXT_ALIGN_LEFT);
+    nk_popup_end(ctx);
+  }
 }
 
 void gui_construction_menu(struct City *c, struct nk_context *ctx) {
@@ -1331,29 +1354,21 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Construction projects", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_construction_projects; i++) {
         const struct Construction *proj = &c->construction_projects[i];
-        static const float ratio[6] = {0.15f, 0.05f, 0.35f,
-                                       0.15f, 0.15f, 0.15f};
-        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
+        static const float ratio[5] = {0.15f, 0.05f, 0.50f, 0.15f, 0.15f};
+        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 5, ratio);
 
         nk_label(ctx, proj->name_str,
                  NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
 
         if (nk_button_label(ctx, "?")) {
-          gui_construction_help_menu(proj);
+          // TODO: Detail pane for construction ...
+          gui_construction_help_menu(proj, ctx);
         }
 
-        nk_label(ctx, proj->description_str,
-                 NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
-
-        int lng = snprintf(NULL, 0, "%.2f gold", proj->cost) + 1;
-        char str[lng];
-        snprintf(str, lng, "%.2f gold |", proj->cost);
-        nk_label(ctx, str, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
-
-        lng = snprintf(NULL, 0, "%ld days", proj->construction_time) + 1;
-        char strr[lng];
-        snprintf(strr, lng, "%ld days", proj->construction_time);
-        nk_label(ctx, strr, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
+        nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                        "%.2f gold", proj->cost);
+        nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                        "%ld days", proj->construction_time);
 
         // TODO: Add visual indication or smt to show that building failed
         // or started
@@ -1390,16 +1405,12 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Constructions", NK_MINIMIZED)) {
       for (size_t i = 0; i < c->num_constructions; i++) {
         const struct Construction *con = &c->constructions[i];
-        // TODO: snprintf(str, lng, "%s built %s", con->name_str,
-        // str_from_date(con->construction_date));
-        const int lng =
-            snprintf(NULL, 0, "%s - %s", con->name_str, con->description_str) +
-            1;
-        char str[lng];
-        snprintf(str, lng, "%s - %s", con->name_str, con->description_str);
-
+        if (!con->construction_finished) {
+          continue;
+        }
         nk_layout_row_dynamic(ctx, 0.0f, 2);
-        nk_label(ctx, str, NK_TEXT_ALIGN_LEFT);
+        nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "%s - %s", con->name_str,
+                        con->description_str);
 
         // Construction detail pane
         if (nk_menu_begin_label(ctx, "!", NK_TEXT_ALIGN_RIGHT,
@@ -1485,24 +1496,21 @@ static struct {
 // ----------- Custom GUI widgets  -----------
 
 void gui_widget_capacity(struct City *c, struct nk_context *ctx,
-                         const char *name) {
-  if (nk_group_begin(ctx, name, NK_WINDOW_NO_SCROLLBAR)) {
+                         uint32_t *usage, uint32_t capacity) {
+  const nk_flags flags = NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER;
+  if (nk_group_begin(ctx, "gui_widget_capacity_outter", flags)) {
 
-    static const float ratio[3] = {0.25f, 0.5f, 0.25f};
-    nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
-    nk_spacing(ctx, 1);
+    nk_layout_row_dynamic(ctx, 0.0f, 1);
 
-    if (nk_group_begin(ctx, "inner",
-                       NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER)) {
+    if (nk_group_begin(ctx, "gui_widget_capacity_inner",
+                       NK_WINDOW_NO_SCROLLBAR)) {
 
-      nk_layout_row_dynamic(ctx, 0.0f, 2);
-      nk_label(ctx, name, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
-      nk_label(ctx, "1 / 3", NK_TEXT_ALIGN_CENTERED);
+      nk_layout_row_dynamic(ctx, 0.0f, 1);
+
+      nk_progress(ctx, usage, capacity, nk_false);
 
       nk_group_end(ctx);
     }
-
-    nk_spacing(ctx, 1);
 
     nk_group_end(ctx);
   }
@@ -1574,38 +1582,35 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
     // Capacities
     nk_layout_row_dynamic(ctx, 0.0f, 3);
-    gui_widget_capacity(c, ctx, "Military");
-    gui_widget_capacity(c, ctx, "Civic");
-    gui_widget_capacity(c, ctx, "Diplomatic");
+    nk_label(ctx, "Military", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
+    nk_label(ctx, "Political", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
+    nk_label(ctx, "Diplomatic", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
 
-    // Other vitals
-    nk_layout_row_dynamic(ctx, 0.0f, 2);
-    gui_widget_capacity(c, ctx, "Gold");
-    gui_widget_capacity(c, ctx, "Food");
+    gui_widget_capacity(c, ctx, &c->military_usage, c->military_capacity);
+    gui_widget_capacity(c, ctx, &c->political_usage, c->political_capacity);
+    gui_widget_capacity(c, ctx, &c->diplomatic_usage, c->diplomatic_capacity);
 
     if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MAXIMIZED)) {
-      nk_layout_row_dynamic(ctx, 0.0f, 1);
-      nk_label(ctx, "Population: 1'000", NK_TEXT_ALIGN_LEFT);
+      nk_layout_row_dynamic(ctx, 0.0f, 2);
 
-      const int lng =
-          snprintf(NULL, 0, "Gold: %.2f (%.2f)", c->gold, c->gold_usage) + 1;
-      char gold_str[lng];
-      snprintf(gold_str, lng, "Gold: %.2f (%.2f)", c->gold, c->gold_usage);
-      nk_layout_row_dynamic(ctx, 0.0f, 1);
-      nk_label(ctx, gold_str, NK_TEXT_ALIGN_LEFT);
+      nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "Population: %.0f",
+                      c->population);
+      nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT, "Gold: %.2f (%.2f)", c->gold,
+                      c->gold_usage);
+      nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "Food: %0.2f (%0.2f)",
+                      c->food_production, c->food_usage);
 
       nk_tree_pop(ctx);
     }
 
     // Effects
     if (nk_tree_push(ctx, NK_TREE_TAB, "Effects", NK_MAXIMIZED)) {
+      nk_layout_row_dynamic(ctx, 0.0f, 2);
       for (size_t i = 0; i < c->num_effects; i++) {
         const struct Effect *e = &c->effects[i];
         if (e->name_str) {
-          const int lng =
-              snprintf(NULL, 0, "%s - %s", e->name_str, e->description_str) + 1;
-          snprintf(str, lng, "%s - %s", e->name_str, e->description_str);
-          nk_label(ctx, str, NK_TEXT_ALIGN_LEFT);
+          nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "%s", e->name_str);
+          nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT, "%s", e->description_str);
         }
       }
       nk_tree_pop(ctx);
