@@ -10,10 +10,21 @@
 #include <sys/time.h>
 #include <time.h>
 
+// NOTE: Used for development
+#define DEBUG
+
 // NOTE: Choice of UI: terminal or GUI based
 #define USER_INTERFACE_GUI
 // #define USER_INTERFACE_TUI
 // TODO: Moved to config file, implement here
+
+static WINDOW *root = NULL; // ncurses root window
+#define C_KEY_DOWN 258
+#define C_KEY_UP 259
+#define C_KEY_LEFT 260
+#define C_KEY_RIGHT 261
+#define C_KEY_ENTER 10
+#define C_KEY_ESCAPE 27
 
 #ifdef USER_INTERFACE_GUI
 
@@ -39,7 +50,6 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
 #endif
 
 #include "cJSON.h"
@@ -60,37 +70,11 @@ static struct {
   struct Resolution RESOLUTION;
 } CONFIG;
 
-// NOTE: Used for development
-#define DEBUG
-
-#define C_KEY_DOWN 258
-#define C_KEY_UP 259
-#define C_KEY_LEFT 260
-#define C_KEY_RIGHT 261
-#define C_KEY_ENTER 10
-#define C_KEY_ESCAPE 27
-
 // Language definitions
 #define WINTER "winter"
 #define SPRING "spring"
 #define SUMMER "summer"
 #define AUTUMN "autumn"
-
-/***** nuklear utility functions *****/
-void nk_format_label(struct nk_context *ctx, const nk_flags align,
-                     const char *format, ...) {
-  va_list args;
-  va_list args_cpy;
-  va_start(args, format);
-  va_copy(args_cpy, args);
-  // NOTE: Copy needed due to vsnprintf modifies its va_list
-  const int lng = vsnprintf(NULL, 0, format, args) + 1;
-  char str[lng];
-  vsnprintf(str, lng, format, args_cpy);
-  nk_label(ctx, str, align);
-  va_end(args);
-  va_end(args_cpy);
-}
 
 /***** string utility functions *****/
 // Returns callee owned ptr to the concatenation of lhs & rhs, NULL on failure
@@ -183,9 +167,9 @@ static inline float maxi(const uint32_t a, const uint32_t b) {
   return a < b ? b : a;
 }
 
-static inline size_t uni_randu(const size_t to) { return rand() % to; }
-
-static WINDOW *root = NULL; // FIXME: ...
+static inline float uniform_random() {
+  return rand() / RAND_MAX;
+}
 
 // NOTE: Julian calendar introduced Jan. 1st of 45 BC
 struct Date {
@@ -201,7 +185,7 @@ static struct Date date;
 // NOTE: Modern Roman numerals (I, V, X, L, C, D, M), (1, 5, 10, 50, 100, 500,
 // 1000) NOTE: Using subtractive notation API: Callee-responsible for freeing
 // the returned pointer
-static inline const char *roman_numeral_str(const uint32_t n) {
+static inline char *roman_numeral_new_str(const uint32_t n) {
   const div_t M = div(n, 1000);
   const div_t C = div(M.rem, 100);
   const div_t X = div(C.rem, 10);
@@ -335,7 +319,7 @@ static inline const char *roman_numeral_str(const uint32_t n) {
     break;
   }
 
-  size_t str_len = M.quot + Cs_size + Xs_size + Is_size;
+  const size_t str_len = M.quot + Cs_size + Xs_size + Is_size;
   char *str = calloc(str_len + 1, 1);
 
   size_t p = 0;
@@ -578,6 +562,7 @@ struct Policy {
 };
 
 struct Construction {
+  float construction_delay_risk; // TODO: Implement it ...
   bool construction_finished;
   bool maintained;
   const char *name_str;
@@ -662,8 +647,9 @@ struct Popup {
   char **hover_txts; // Description text for the choices when hovering over them
   void (*callback)(const struct Popup *p, const struct City *c,
                    struct City *c1);
-  uint32_t choice_choosen; // Set by the popup handling mechanic and processed
-                           // by the callback
+  // NOTE: -1 = not handled by user, >= 0 callback executed in simulate_timestep
+  int32_t choice_choosen; // Set by the popup handling mechanic and processed
+                          // by the callback
 };
 
 /// NOTE: All city_add_* functions returns a ptr to the last element added
@@ -766,6 +752,10 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->popups = c->popups;
   c1->num_popups = c->num_popups;
   c1->num_popups_capacity = c->num_popups_capacity;
+  c1->birthrate = c->birthrate;
+  c1->deathrate = c->deathrate;
+  c1->emmigrationrate = c->emmigrationrate;
+  c1->immigrationrate = c->immigrationrate;
 
   // Compute effects affecting the change of rate
   for (int32_t i = 0; i < c1->num_effects; i++) {
@@ -796,7 +786,18 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
       continue;
     }
     for (size_t j = 0; j < con->num_effects; j++) {
-      // con->effect[j].tick_effect(con->effect, c, c1);
+      con->effect[j].tick_effect(con->effect, c, c1);
+    }
+  }
+
+  // Popups effects
+  for (size_t i = 0; i < c1->num_popups; i++) {
+    if (c1->popups[i].choice_choosen >= 0) {
+      c1->popups[i].callback(&c1->popups[i], c, c1);
+
+      c1->popups[i] = c1->popups[c1->num_popups - 1];
+      c1->num_popups--;
+      i--;
     }
   }
 
@@ -909,7 +910,7 @@ void imperator_demands_money_callback(const struct Popup *p,
                                       const struct City *c, struct City *c1) {
   switch (p->choice_choosen) {
   case 0:
-    c1->gold -= 50.0f;
+    c1->gold_usage += 50.0f;
     break;
   case 1:
     c1->population -= 50.0f;
@@ -958,12 +959,18 @@ void imperator_demands_money(struct Effect *e, const struct City *c,
 #endif
 #ifdef USER_INTERFACE_GUI
     struct Popup popup;
-    popup.title = "Imperator requires resources ...";
+    popup.choice_choosen = -1;
+    popup.title = "War effort in the East requires resources ...";
+    popup.description =
+        "Pompey Magnus has sent envoys from the far East. The "
+        "war effort against "
+        "the Seleucid Empire in the East needs resources. Whether or not these "
+        "conquests will be ratified by the Senate is still an open question ..";
     popup.num_choices = 2;
     popup.choices = (char **)calloc(2, sizeof(char *));
     popup.hover_txts = (char **)calloc(2, sizeof(char *));
     static char *choices[2] = {"Send a wagon of gold!",
-                               "Send him the finest Legionnaires!"};
+                               "Send Pompey the finest Legionnaires!"};
     static char *hover_txts[2] = {"-50.0 gold", "-50 population"};
     popup.choices = choices;
     popup.hover_txts = hover_txts;
@@ -977,13 +984,18 @@ void building_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
   struct Construction *arg = (struct Construction *)e->arg;
 
-  c1->gold -= arg->construction_cost; // FIXME: Gold usage instead?
+  c1->gold_usage += arg->construction_cost; 
 
   const int lng = snprintf(NULL, 0, "%ld days left, - %.2f gold / day",
                            e->duration, arg->construction_cost) +
                   1;
   snprintf(e->description_str, lng, "%ld days left, - %.2f gold / day",
            e->duration, arg->construction_cost);
+
+  if (uniform_random() < arg->construction_delay_risk) {
+    e->duration++;
+    return;
+  }
 
   if (e->duration == 1) {
     arg->maintained = true;
@@ -1237,9 +1249,6 @@ void update_tui(const struct City *c) {
   assert(c);
   int row = 0;
   wmvclrprintw(root, row++, 0, "%s", c->name);
-  wmvclrprintw(root, row++, 0, "%s, day %s of %s, %s", get_year_str(&date),
-               roman_numeral_str(date.day + 1), get_month_str(date),
-               get_season_str(&date));
 
   // TODO: Merge effects from constructions with effects
   row += 1;
@@ -1365,10 +1374,10 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
           gui_construction_help_menu(proj, ctx);
         }
 
-        nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-                        "%.2f gold", proj->cost);
-        nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-                        "%ld days", proj->construction_time);
+        nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%.2f gold",
+                  proj->cost);
+        nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days",
+                  proj->construction_time);
 
         // TODO: Add visual indication or smt to show that building failed
         // or started
@@ -1379,22 +1388,31 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         } else {
           // FIXME: GUI nk_menu_begin_label does not have the same background as
           // nk_label, whats up with that?
-          // TODO: Implement construction type selection menu
-          if (nk_group_begin(ctx, "",
+          // FIXME: nk_menu_begin_label is confused by lack of ID to seperate multiple instance of the widget
+          const int lng =
+            snprintf(NULL, 0, "construction_menu_grp_%lu", i) + 1;
+          char grp_id[lng];
+          snprintf(grp_id, lng, "construction_menu_grp_%lu", i);
+          if (nk_group_begin(ctx, grp_id,
                              NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
             nk_layout_row_dynamic(ctx, 0.0f, 1);
 
+            const struct nk_vec2 menu_size =
+                nk_vec2(200, 100 * proj->num_effects);
+
             if (nk_menu_begin_label(ctx, "Build", NK_TEXT_ALIGN_CENTERED,
-                                    nk_vec2(200, 400))) {
+                                    menu_size)) {
+              nk_layout_row_dynamic(ctx, 0.0f, 1);
               for (size_t j = 0; j < proj->num_effects; j++) {
-                if (nk_button_label(ctx, proj->effect[j].name_str)) {
+                if (nk_menu_item_label(ctx, proj->effect[j].name_str,
+                                       NK_TEXT_ALIGN_CENTERED |
+                                           NK_TEXT_ALIGN_MIDDLE)) {
                   build_construction(c, *proj, proj->effect[j]);
-                  nk_menu_close(ctx);
                 }
               }
-
               nk_menu_end(ctx);
             }
+
             nk_group_end(ctx);
           }
         }
@@ -1409,8 +1427,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
           continue;
         }
         nk_layout_row_dynamic(ctx, 0.0f, 2);
-        nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "%s - %s", con->name_str,
-                        con->description_str);
+        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "%s - %s", con->name_str,
+                  con->description_str);
 
         // Construction detail pane
         if (nk_menu_begin_label(ctx, "!", NK_TEXT_ALIGN_RIGHT,
@@ -1485,6 +1503,9 @@ void gui_ingame_menu(struct City *c, struct nk_context *ctx) {
 static struct {
   struct nk_image policy_icon;
   struct nk_image construction_icon;
+  struct nk_image diplomatic_icon;
+  struct nk_image military_icon;
+  struct nk_image civic_icon;
 #define WINDOW_NAME_CONSTRUCTION "construction_window"
 #define WINDOW_NAME_EVENTLOG "eventlog_window"
 #define WINDOW_NAME_HELP "help_window"
@@ -1516,6 +1537,39 @@ void gui_widget_capacity(struct City *c, struct nk_context *ctx,
   }
 }
 
+void gui_popup(struct nk_context *ctx, struct City *c, struct Popup *p) {
+  const nk_flags flags =
+      NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
+  const uint32_t win_width = 500;
+  const uint32_t win_height = 260 + 50 * p->num_choices;
+  const struct nk_rect win_rect =
+      nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
+              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
+              win_width, win_height);
+
+  if (nk_begin(ctx, p->title, win_rect, flags)) {
+    nk_layout_row_dynamic(ctx, 200.0f, 1);
+
+    if (nk_group_begin(ctx, "", NK_WINDOW_BORDER)) {
+      nk_layout_row_dynamic(ctx, 0.0f, 1);
+      nk_label_wrap(ctx, p->description);
+      nk_group_end(ctx);
+    }
+
+    nk_layout_row_dynamic(ctx, 10.0f, 1);
+    nk_spacing(ctx, 1);
+
+    nk_layout_row_dynamic(ctx, 0.0f, 1);
+    for (size_t i = 0; i < p->num_choices; i++) {
+      if (nk_button_label(ctx, p->choices[i])) {
+        p->choice_choosen = i;
+      }
+    }
+  }
+
+  nk_end(ctx);
+}
+
 // TODO: Window toggling does not work properly
 // TODO: Remember the windows placement between opening & closing
 // Display graphical-based user interface (GUI)
@@ -1534,16 +1588,11 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
   if (nk_begin(ctx, c->name, nk_rect(50, 50, 800, 600), main_win_flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
-    const int lng =
-        snprintf(NULL, 0, "%s, day %s of %s, %s", get_year_str(&date),
-                 roman_numeral_str(date.day + 1), get_month_str(date),
-                 get_season_str(&date)) +
-        1;
-    char str[lng];
-    snprintf(str, lng, "%s, day %s of %s, %s", get_year_str(&date),
-             roman_numeral_str(date.day + 1), get_month_str(date),
-             get_season_str(&date));
-    nk_label(ctx, str, NK_TEXT_ALIGN_CENTERED);
+    char *numeral_str = roman_numeral_new_str(date.day + 1);
+    nk_labelf(ctx, NK_TEXT_ALIGN_CENTERED, "%s, day %s of %s, %s",
+              get_year_str(&date), numeral_str, get_month_str(date),
+              get_season_str(&date));
+    free(numeral_str);
 
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     nk_slider_int(ctx, 0, (int *)(&simulation_speed), 11, 1);
@@ -1554,31 +1603,35 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       nk_label(ctx, str, NK_TEXT_ALIGN_CENTERED);
     }
 
-    nk_layout_row_static(ctx, 50, 100, 6);
+    nk_layout_row_static(ctx, 64, 64, 8);
 
-    if (nk_button_label(ctx, "Military")) {
+    nk_spacing(ctx, 1);
+
+    if (nk_button_image(ctx, GUI.military_icon)) {
       open_military_window = !open_military_window;
     }
 
-    if (nk_button_label(ctx, "Diplomatic")) {
+    if (nk_button_image(ctx, GUI.diplomatic_icon)) {
       open_diplomatic_window = !open_diplomatic_window;
     }
 
-    if (nk_button_label(ctx, "Civic")) {
+    if (nk_button_image(ctx, GUI.civic_icon)) {
       open_civic_window = !open_civic_window;
-    }
-
-    if (nk_button_label(ctx, "Event log")) {
-      open_event_log_window = !open_event_log_window;
     }
 
     if (nk_button_image(ctx, GUI.construction_icon)) {
       open_construction_window = !open_construction_window;
     }
 
-    if (nk_button_label(ctx, "?")) {
+    if (nk_button_label(ctx, "Event log")) {
+      open_event_log_window = !open_event_log_window;
+    }
+
+    if (nk_button_label(ctx, "Help")) {
       open_help_window = !open_help_window;
     }
+
+    nk_spacing(ctx, 1);
 
     // Capacities
     nk_layout_row_dynamic(ctx, 0.0f, 3);
@@ -1593,12 +1646,13 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MAXIMIZED)) {
       nk_layout_row_dynamic(ctx, 0.0f, 2);
 
-      nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "Population: %.0f",
-                      c->population);
-      nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT, "Gold: %.2f (%.2f)", c->gold,
-                      c->gold_usage);
-      nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "Food: %0.2f (%0.2f)",
-                      c->food_production, c->food_usage);
+      // TODO: Population change rate (sub categories?)
+      nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Population: %.2f (%0.2f)",
+                c->population, 0.123f);
+      nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT, "Gold: %.2f (%.2f)", c->gold,
+                c->gold_usage);
+      nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Food: %0.2f (%0.2f)",
+                c->food_production, c->food_usage);
 
       nk_tree_pop(ctx);
     }
@@ -1609,8 +1663,8 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       for (size_t i = 0; i < c->num_effects; i++) {
         const struct Effect *e = &c->effects[i];
         if (e->name_str) {
-          nk_format_label(ctx, NK_TEXT_ALIGN_LEFT, "%s", e->name_str);
-          nk_format_label(ctx, NK_TEXT_ALIGN_RIGHT, "%s", e->description_str);
+          nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "%s", e->name_str);
+          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT, "%s", e->description_str);
         }
       }
       nk_tree_pop(ctx);
@@ -1632,8 +1686,12 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     // nk_tooltip(struct nk_context *, const char *)
   }
 
-  if (open_military_window) {
+  if (open_military_window) { 
     gui_military_menu(c, ctx);
+  }
+
+  for (size_t i = 0; i < c->num_popups; i++) {
+    gui_popup(ctx, c, &c->popups[i]);
   }
 }
 #endif
@@ -1760,12 +1818,22 @@ int main(void) {
     nk_sdl_font_stash_end();
   }
 
-  const char *icon_name = "icons/greek-temple.png";
-  const char *filepath = str_concat_new(CONFIG.FILEPATH_RSRC, icon_name);
+  char *filepath =
+      str_concat_new(CONFIG.FILEPATH_RSRC, "icons/ionic-column.png");
   GUI.construction_icon = nk_image_load(filepath);
-  if (filepath) {
-    free((void *)filepath);
-  }
+  free(filepath);
+
+  filepath = str_concat_new(CONFIG.FILEPATH_RSRC, "icons/gladius.png");
+  GUI.military_icon = nk_image_load(filepath);
+  free(filepath);
+
+  filepath = str_concat_new(CONFIG.FILEPATH_RSRC, "icons/wax-tablet.png");
+  GUI.diplomatic_icon = nk_image_load(filepath);
+  free(filepath);
+
+  filepath = str_concat_new(CONFIG.FILEPATH_RSRC, "icons/caesar.png");
+  GUI.civic_icon = nk_image_load(filepath);
+  free(filepath);
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
@@ -1812,8 +1880,8 @@ int main(void) {
   struct FarmArgument grape_farm_arg = {.produce = Grapes, .area = 0};
 
   struct Effect grape_farm_construction_effect = {
-      .name_str = "Farm",
-      .description_str = "piece of land that produces",
+      .name_str = "Grape farm",
+      .description_str = "piece of land that produces grapes",
       .duration = FOREVER,
       .arg = &grape_farm_arg,
       .tick_effect = farm_tick_effect};
@@ -1821,8 +1889,8 @@ int main(void) {
   struct FarmArgument wheat_farm_arg = {.produce = Wheat, .area = 0};
 
   struct Effect wheat_farm_construction_effect = {
-      .name_str = "Farm",
-      .description_str = "piece of land that produces",
+      .name_str = "Wheat farm",
+      .description_str = "piece of land that produces wheat",
       .duration = FOREVER,
       .arg = &wheat_farm_arg,
       .tick_effect = farm_tick_effect};
@@ -2147,6 +2215,7 @@ int main(void) {
   if (CONFIG.FILEPATH_RSRC) {
     free((void *)CONFIG.FILEPATH_RSRC);
   }
-  // TODO: Make sure to clean up some library calls in order to make valgrinding this a bit easier later on
+  // TODO: Make sure to clean up some library calls in order to make valgrinding
+  // this a bit easier later on
   return 0;
 }
