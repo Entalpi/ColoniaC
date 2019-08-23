@@ -829,6 +829,8 @@ void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
       fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
   c1->food_production +=
       output_effectiveness * c->produce_values[arg->produce] * arg->area;
+
+  c1->land_area_used += arg->area;
 }
 
 void aqueduct_tick_effect(struct Effect *e, const struct City *c,
@@ -878,6 +880,7 @@ void senate_house_tick_effect(struct Effect *e, const struct City *c,
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
+  // TODO: Land tax implementation
   const struct FarmArgument *arg = (struct FarmArgument *)e->arg;
   const float land_tax_price = 0.2f;
   c1->gold_usage -= land_tax_price * arg->area * arg->tax_percentage;
