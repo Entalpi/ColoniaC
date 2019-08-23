@@ -771,7 +771,11 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
     c1->effects[i].duration--;
     if (c1->effects[i].duration == 0) {
       c1->effects[i] = c1->effects[c1->num_effects - 1];
-      c1->num_effects--;
+      if (c1->num_effects - 1 > 0) {
+        c1->num_effects--;
+      } else {
+        c1->num_effects = 0;
+      }
       i--;
     }
   }
