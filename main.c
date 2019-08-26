@@ -446,7 +446,7 @@ static inline bool is_winter(const struct Date *date) {
   return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
-enum CapacityType { Political = 0, Military = 1, Diplomatic = 1 };
+enum CapacityType { Political = 0, Military = 1, Diplomatic = 2 };
 
 const char *lut_capacity_str(const enum CapacityType type) {
   static const char *strs[3] = {"Political", "Military", "Diplomatic"};
@@ -503,6 +503,19 @@ void eventlog_add_msg(struct EventLog *log, const char *msg) {
   strcpy(log->lines[log->curr_line], msg);
 }
 
+void eventlog_add_msgf(struct EventLog *log, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  va_list args_cpy;
+  va_copy(args_cpy, args); // vsnprintf modifies va list args
+  const int lng = vsnprintf(NULL, 0, fmt, args) + 1;
+  char msg[lng];
+  vsnprintf(msg, lng, fmt, args_cpy);
+  va_end(args);
+  va_end(args_cpy);
+  eventlog_add_msg(log, msg);
+}
+
 void eventlog_clear(struct EventLog *log) {
   assert(log);
   for (size_t i = 0; i < log->capacity; i++) {
@@ -542,8 +555,11 @@ bool eventlog_next_msg(struct EventLog *log, char **msg) {
   return true;
 }
 
+struct LandTaxArgument {
+  float tax_percentage;
+};
+
 struct FarmArgument {
-  float tax_percentage;         // [0, 1] in land tax
   size_t area;                  // Land area used (jugerum, cirka 0.6 hectare)
   enum FarmProduceType produce; // Farm produce (olives, grapes, etc)
   // NOTE: Individual farm cyclic ouput parameters
@@ -558,11 +574,13 @@ struct CursusHonorum {
 
 // Roman Lex (pl. leges)
 struct Law {
+  bool passed;
   char *name_str;
   char *description_str;
   char *help_str;
   enum CapacityType type;
-  uint8_t cost;
+  uint8_t cost;     // Quantify of power points
+  uint8_t cost_lng; // How many ticks the cost is incurred
   struct Date date_passed;
   // TODO: Able to repeal laws?
   struct Effect *effect;
@@ -630,9 +648,6 @@ struct City {
   size_t num_popups_capacity;
   // Laws
   bool laws_enabled;
-  struct Law *passed_laws;
-  size_t num_passed_laws;
-  size_t num_passed_laws_capacity;
   struct Law *available_laws;
   size_t num_available_laws;
   size_t num_available_laws_capacity;
@@ -721,12 +736,6 @@ struct Law *city_add_law(struct City *c, const struct Law l) {
   return &c->available_laws[c->num_available_laws_capacity - 1];
 }
 
-struct Law *city_pass_law(struct City *c, struct Law *l) {
-  // TODO: 1) Remove from available list
-  //       2) Add to the passed list
-  return NULL;
-}
-
 /// Calculates the population changes this timestep
 void population_calculation(const struct City *c, struct City *c1) {
   assert(c);
@@ -744,10 +753,11 @@ void population_calculation(const struct City *c, struct City *c1) {
   avg_food_price /= NUMBER_OF_PRODUCE;
   c1->gold += avg_food_price * (c->food_production - c->food_usage);
 
-  // TODO: ... -> Food -> Pops -> Gold -> ...
+  // Gold-food-population cycle calculations
   c1->food_production -= c1->food_usage;
+  c1->population_delta += (int)roundf(10.0f * c1->food_production);
+
   c1->population += c1->population_delta;
-  c1->population += (int)c1->food_production;
 }
 
 /// Apply and deal with the effects in place on the city
@@ -779,9 +789,6 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->available_laws = c->available_laws;
   c1->num_available_laws = c->num_available_laws;
   c1->num_available_laws_capacity = c->num_available_laws_capacity;
-  c1->passed_laws = c->passed_laws;
-  c1->num_passed_laws = c->num_passed_laws;
-  c1->num_passed_laws_capacity = c->num_passed_laws_capacity;
   c1->cursus_honorum = c->cursus_honorum;
 
   // Compute effects affecting the change of rate
@@ -915,15 +922,14 @@ void senate_house_tick_effect(struct Effect *e, const struct City *c,
 
 void land_tax_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
-  // TODO: Land tax implementation
-  const struct FarmArgument *arg = (struct FarmArgument *)e->arg;
-  const float land_tax_price = 0.2f;
-  c1->gold_usage -= land_tax_price * arg->area * arg->tax_percentage;
+  const struct LandTaxArgument *arg = (struct LandTaxArgument *)e->arg;
+  const float land_tax_price = 0.05f;
+  c1->gold_usage -= land_tax_price * c->land_area_used * arg->tax_percentage;
 }
 
 void insula_tick_effect(struct Effect *e, const struct City *c,
                         struct City *c1) {
-  // TODO: Insula tick effect
+  c1->population_delta += 1;
 }
 
 void port_ostia_tick_effect(struct Effect *e, const struct City *c,
@@ -958,6 +964,26 @@ void event_log_test_effect(struct Effect *e, const struct City *c,
   snprintf(msg, lng, "Message #%u", i);
   eventlog_add_msg(c->log, msg);
   i++;
+}
+
+void enact_law_tick_effect(struct Effect *e, const struct City *c,
+                           struct City *c1) {
+  const struct Law *arg = (struct Law *)e->arg;
+  switch (arg->type) {
+  case Political:
+    c1->political_usage += arg->cost;
+    break;
+  case Diplomatic:
+    c1->diplomatic_usage += arg->cost;
+    break;
+  case Military:
+    c1->military_usage += arg->cost;
+    break;
+  }
+}
+
+void bath_tick_effect(struct Effect*e, const struct City *c, struct City *c1) {
+  // TODO: Implement
 }
 
 void imperator_demands_money_callback(const struct Popup *p,
@@ -1026,18 +1052,25 @@ void building_tick_effect(struct Effect *e, const struct City *c,
     arg->construction_completed = date;
     arg->construction_in_progress = false;
 
-    const int lng = snprintf(NULL, 0, "Finished construction of a %s.",
-                             arg->effect->name_str) +
-                    1;
-    char msg[lng];
-    snprintf(msg, lng, "Finished construction of a %s.", arg->effect->name_str);
-    eventlog_add_msg(c1->log, msg);
+    eventlog_add_msgf(c1->log, "Finished construction of a %s",
+                      arg->effect->name_str);
 
     free(e->name_str);
     e->name_str = NULL;
     free(e->description_str);
     e->description_str = NULL;
   }
+}
+
+void city_enact_law(struct City *c, struct Law *l) {
+  l->date_passed = date;
+  l->passed = true;
+
+  struct Effect enact_law_effect = {
+      .duration = l->cost_lng, .arg = l, .tick_effect = enact_law_tick_effect};
+  city_add_effect(c, enact_law_effect);
+
+  city_add_effect(c, *l->effect);
 }
 
 void build_construction(struct City *c, const struct Construction cp,
@@ -1340,11 +1373,11 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
 
   const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE |
                              NK_WINDOW_CLOSABLE | NK_WINDOW_SCALABLE;
-  if (nk_begin(ctx, "Construction", nk_rect(200, 500, 800, 300), win_flags)) {
+  if (nk_begin(ctx, "Construction", nk_rect(200, 500, 650, 300), win_flags)) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Construction projects", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_construction_projects; i++) {
         const struct Construction *proj = &c->construction_projects[i];
-        static const float ratio[5] = {0.15f, 0.05f, 0.50f, 0.15f, 0.15f};
+        static const float ratio[5] = {0.20f, 0.05f, 0.45f, 0.15f, 0.15f};
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 5, ratio);
 
         nk_label(ctx, proj->name_str,
@@ -1461,38 +1494,59 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
               (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
               win_width, win_height);
   if (nk_begin(ctx, "Political", win_rect, win_flags)) {
-    nk_layout_row_dynamic(ctx, 0.0f, 1);
 
     if (nk_tree_push(ctx, NK_TREE_TAB, "Laws", NK_MINIMIZED)) {
 
+      nk_layout_row_dynamic(ctx, 0.0f, 2);
+
       static int active_pane = 0;
-      if (nk_button_symbol_label(ctx, NK_SYMBOL_CIRCLE_SOLID, "Passed",
-                                 NK_TEXT_ALIGN_CENTERED)) {
+      if (nk_button_symbol_label(ctx,
+                                 active_pane == 0 ? NK_SYMBOL_CIRCLE_SOLID
+                                                  : NK_SYMBOL_CIRCLE_OUTLINE,
+                                 "Passed", NK_TEXT_ALIGN_CENTERED)) {
         active_pane = 0;
       }
 
-      if (nk_button_symbol_label(ctx, NK_SYMBOL_CIRCLE_SOLID, "Available",
-                                 NK_TEXT_ALIGN_CENTERED)) {
+      if (nk_button_symbol_label(ctx,
+                                 active_pane == 1 ? NK_SYMBOL_CIRCLE_SOLID
+                                                  : NK_SYMBOL_CIRCLE_OUTLINE,
+                                 "Available", NK_TEXT_ALIGN_CENTERED)) {
         active_pane = 1;
       }
 
       switch (active_pane) {
       case 0:
         nk_layout_row_dynamic(ctx, 0.0f, 1);
-        for (size_t i = 0; i < c->num_passed_laws; i++) {
-          struct Law *law = &c->passed_laws[i];
+        for (size_t i = 0; i < c->num_available_laws; i++) {
+          struct Law *law = &c->available_laws[i];
+          if (!law->passed) {
+            continue;
+          }
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
             nk_label_wrap(ctx, law->description_str);
             nk_labelf_wrap(ctx, "Passed: %u BC", law->date_passed.year);
             if (law->gui_handler) {
               law->gui_handler(ctx, law);
             }
+
+            nk_tree_pop(ctx);
           }
         }
         break;
       case 1:
+        nk_layout_row_dynamic(ctx, 0.0f, 1);
         for (size_t i = 0; i < c->num_available_laws; i++) {
-          // TODO: Design first
+          struct Law *law = &c->available_laws[i];
+          if (law->passed) {
+            continue;
+          }
+          if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
+            nk_label_wrap(ctx, law->description_str);
+            if (nk_button_label(ctx, "Enact")) {
+              city_enact_law(c, law);
+            }
+            nk_tree_pop(ctx);
+          }
         }
         break;
       }
@@ -1507,6 +1561,8 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
       nk_tree_pop(ctx);
     }
   }
+
+  nk_end(ctx);
 }
 
 void gui_diplomatic_menu(struct City *c, struct nk_context *ctx) {
@@ -1657,7 +1713,7 @@ void update_gui(struct City *c, struct nk_context *ctx) {
   const nk_flags main_win_flags =
       NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
 
-  const uint32_t win_width = 600;
+  const uint32_t win_width = 650;
   const uint32_t win_height = win_width;
   const struct nk_rect win_rect =
       nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
@@ -1729,9 +1785,9 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       nk_layout_row_dynamic(ctx, 0.0f, 3);
 
       nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Population: %lu (%u)", c->population, c->population_delta);
+                "Population: %lu (%i)", c->population, c->population_delta);
       nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Gold: %.2f (%.2f)", c->gold, c->gold_usage);
+                "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
       nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
                 "Food: %.2f", c->food_production - c->food_usage);
 
@@ -1864,11 +1920,18 @@ enum GameState {
   BANKRUPT = 1,
   RISE_OF_THE_EMPIRE = 2,
   BARBARIANS_TAKEOVER = 3,
+  IRRELEVANCE = 4,
   NUM_GAMESTATE
 }; // TODO: Etc
 
 enum GameState check_gamestate(const struct City *c) {
   // TODO: Implement all the game states
+  if (c->gold <= 0.0f) {
+    return BANKRUPT;
+  }
+  if (c->population <= 0) {
+    return IRRELEVANCE;
+  }
   return REPUBLIC;
 }
 
@@ -2055,7 +2118,7 @@ int main(void) {
                                                 olive_farm_construction_effect};
 
   struct Construction farm = {.cost = 2.0f,
-                              .construction_time = 7,
+                              .construction_time = 10,
                               .maintenance = 0.0f,
                               .name_str = "Farm",
                               .help_str = farm_help_str,
@@ -2140,7 +2203,7 @@ int main(void) {
       .help_str = temple_help_str,
       .cost = 25.0f,
       .maintenance = 0.15f,
-      .construction_time = 4 * 30,
+      .construction_time = 5 * 30,
       .effect = temple_effects,
       .num_effects = 3};
 
@@ -2156,15 +2219,12 @@ int main(void) {
       .description_str = "Meeting place of the lawmaking part of the Republic",
       .cost = 50.0f,
       .maintenance = 0.05f,
-      .construction_time = 30,
+      .construction_time = 3 * 30,
       .effect = &senate_house_construction_effect,
       .num_effects = 1};
 
-  struct Effect insula_construction_effect = {.name_str = "Insula",
-                                              .duration = 0,
-                                              .arg = 0,
-                                              .tick_effect =
-                                                  insula_tick_effect};
+  struct Effect insula_construction_effect = {
+      .name_str = "Insula", .duration = 300, .tick_effect = insula_tick_effect};
 
   struct Construction insula = {.name_str = "Insula",
                                 .help_str = insula_help_str,
@@ -2172,22 +2232,19 @@ int main(void) {
                                     "Apartment block with space for ",
                                 .cost = 10.0f,
                                 .maintenance = 0.05f,
-                                .construction_time = 30,
+                                .construction_time = 60,
                                 .effect = &insula_construction_effect,
                                 .num_effects = 1};
 
-  struct Effect bakery_construction_effect = {.name_str = "Bakery",
-                                              .duration = 0,
-                                              .arg = 0,
-                                              .tick_effect =
-                                                  bakery_tick_effect};
+  struct Effect bakery_construction_effect = {
+      .name_str = "Bakery", .duration = 0, .tick_effect = bakery_tick_effect};
 
   struct Construction bakery = {.name_str = "Bakery",
                                 .help_str = bakery_help_str,
                                 .description_str = "Roman breakmaking industry",
                                 .cost = 15.0f,
                                 .maintenance = 0.05f,
-                                .construction_time = 40,
+                                .construction_time = 45,
                                 .effect = &bakery_construction_effect,
                                 .num_effects = 1};
 
@@ -2200,7 +2257,7 @@ int main(void) {
       .description_str = "Censors base of operations during the Republic",
       .cost = 50.0f,
       .maintenance = 0.5f,
-      .construction_time = 30,
+      .construction_time = 60,
       .effect = &villa_publica_construction_effect,
       .num_effects = 1};
 
@@ -2217,6 +2274,19 @@ int main(void) {
                                             &circus_maximus_construction_effect,
                                         .num_effects = 1};
 
+  struct Effect bath_construction_effect = {.duration = FOREVER,
+                                            .tick_effect = &bath_tick_effect};
+
+  struct Construction bath = {.name_str = "Bath house",
+                              .help_str = bath_help_str,
+                              .description_str =
+                                  bath_description_strs[CONFIG.LANGUAGE],
+                              .cost = 100.0f,
+                              .maintenance = 1.5f,
+                              .construction_time = 12 * 10,
+                              .effect = &bath_construction_effect,
+                              .num_effects = 1};
+
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
   city_add_construction_project(city, aqueduct);
@@ -2228,6 +2298,8 @@ int main(void) {
   city_add_construction_project(city, port_ostia);
   city_add_construction_project(city, circus_maximus);
   city_add_construction_project(city, villa_publica);
+  city_add_construction_project(city, bakery);
+  city_add_construction_project(city, bath);
 
   struct Effect pops_food_eating = {.duration = FOREVER};
   pops_food_eating.tick_effect = pops_eating_tick_effect;
@@ -2249,12 +2321,17 @@ int main(void) {
   city_add_effect(city, building_maintenance);
 
   /// Laws
+  struct LandTaxArgument land_tax_arg = {.tax_percentage = 0.2f};
+
   struct Effect land_tax_effect = {.duration = FOREVER,
+                                   .arg = &land_tax_arg,
                                    .tick_effect = &land_tax_tick_effect};
 
-  struct Law land_tax = {.name_str = "Enact land tax",
-                         .description_str = "Places a tax on the land itself.",
+  struct Law land_tax = {.name_str = "Lex Tributum Soli",
+                         .description_str =
+                             "Roman land tax based on size of the land",
                          .cost = 1,
+                         .cost_lng = 3 * 30,
                          .type = Political,
                          .effect = &land_tax_effect};
 
