@@ -982,7 +982,7 @@ void enact_law_tick_effect(struct Effect *e, const struct City *c,
   }
 }
 
-void bath_tick_effect(struct Effect*e, const struct City *c, struct City *c1) {
+void bath_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
   // TODO: Implement
 }
 
@@ -1087,14 +1087,11 @@ void build_construction(struct City *c, const struct Construction cp,
       activated_effect; // TODO: Expand with more than one activated effect
   construction->num_effects = 1;
 
-  int lng = snprintf(NULL, 0, "Building of a %s started ..", cp.name_str) + 1;
-  char msg[lng];
-  snprintf(msg, lng, "Building of a %s started ..", cp.name_str);
-  eventlog_add_msg(c->log, msg);
+  eventlog_add_msgf(c->log, "Building of a %s started ..", cp.name_str);
 
-  lng = snprintf(NULL, 0, "9999 days left, - %.2f / day",
-                 construction->construction_cost) +
-        1;
+  int lng = snprintf(NULL, 0, "9999 days left, - %.2f / day",
+                     construction->construction_cost) +
+            1;
   char *description_str =
       (char *)calloc(lng, sizeof(char)); // Filled by the building_tick_effect
 
@@ -1434,7 +1431,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
       nk_tree_pop(ctx);
     }
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Constructions", NK_MINIMIZED)) {
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Manage constructions", NK_MINIMIZED)) {
       for (size_t i = 0; i < c->num_constructions; i++) {
         struct Construction *con = &c->constructions[i];
         if (!con->construction_finished) {
@@ -1713,11 +1710,11 @@ void update_gui(struct City *c, struct nk_context *ctx) {
   const nk_flags main_win_flags =
       NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
 
-  const uint32_t win_width = 650;
-  const uint32_t win_height = win_width;
+  const uint32_t win_width = 800;
+  const uint32_t win_height = 500;
   const struct nk_rect win_rect =
       nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
-              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
+              (CONFIG.RESOLUTION.height / 4.0f) - (win_height / 2.0f),
               win_width, win_height);
   if (nk_begin(ctx, c->name, win_rect, main_win_flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
@@ -1810,13 +1807,13 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       nk_tree_pop(ctx);
     }
 
-    nk_layout_row_dynamic(ctx, 0.0f, 1);
-    nk_slider_int(ctx, 0, (int *)(&simulation_speed), 11, 1);
-    nk_layout_row_dynamic(ctx, 0.0f, 10);
-    for (size_t i = 0; i < 10; i++) {
-      char str[4];
-      snprintf(str, 4, "%li", i);
-      nk_label(ctx, str, NK_TEXT_ALIGN_CENTERED);
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Game speed", NK_MAXIMIZED)) {
+      float ratio[] = {0.05f, 0.90f, 0.05f};
+      nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
+      nk_label(ctx, "0", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
+      nk_slider_int(ctx, 0, (int *)&simulation_speed, 11, 1);
+      nk_label(ctx, "1", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+      nk_tree_pop(ctx);
     }
   }
   nk_end(ctx);
