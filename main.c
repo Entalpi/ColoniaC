@@ -58,6 +58,16 @@ static WINDOW *root = NULL; // ncurses root window
 
 #include "cJSON.h"
 
+#define NK_TOOLTIP(ctx, code, str)                                             \
+  {                                                                            \
+    const struct nk_input *in = &ctx->input;                                   \
+    struct nk_rect bounds = nk_widget_bounds(ctx);                             \
+    code;                                                                      \
+    if (nk_input_is_mouse_hovering_rect(in, bounds)) {                         \
+      nk_tooltip(ctx, str);                                                    \
+    }                                                                          \
+  }
+
 struct Resolution {
   int32_t width;
   int32_t height;
@@ -604,6 +614,9 @@ struct Construction {
   size_t construction_time; // Time to build in timesteps (days)
   struct Date construction_started;
   struct Date construction_completed;
+  // Callback to the management pane of the construction
+  void (*gui_construction_management)(struct nk_context *ctx,
+                                      struct Construction *con);
 };
 
 struct City {
@@ -1323,12 +1336,24 @@ struct nk_image nk_image_load(const char *filename) {
   return nk_image_id((int)tex);
 }
 
+void gui_farm_construction_management(struct nk_context *ctx,
+                                      struct Construction *con) {
+  assert(con);
+  assert(ctx);
+  const struct FarmArgument *arg = (struct FarmArgument *)con->effect->arg;
+  assert(arg && "Farm construction's effect lacks argument");
+
+  nk_layout_row_dynamic(ctx, 0.0f, 1);
+  struct nk_property_variant variant =
+      nk_property_variant_int(arg->area, 0, 100, 1);
+
+  const char *area_tooltip_str = "Each increase in jugerum cost 1 gold";
+  NK_TOOLTIP(ctx, nk_property(ctx, "Area", &variant, 1.0f, NK_FILTER_INT),
+             area_tooltip_str);
+}
+
 void gui_construction_detail_menu(struct Construction *con,
                                   struct nk_context *ctx) {
-  // TODO: Implement demolishion of constructions (for resources aka
-  // gold)
-  // TODO: Implement information pane about constructions (useful for
-  // micromanagement)
   const nk_flags flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE |
                          NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE;
   const uint32_t win_width = 400;
@@ -1340,6 +1365,14 @@ void gui_construction_detail_menu(struct Construction *con,
   if (nk_begin(ctx, con->name_str, win_rect, flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     nk_label_wrap(ctx, con->help_str);
+
+    if (con->gui_construction_management) {
+      con->gui_construction_management(ctx, con);
+    }
+
+    if (nk_button_label(ctx, "Destroy building")) {
+      // TODO: Implement ?
+    }
   }
   nk_end(ctx);
 }
@@ -1374,8 +1407,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Construction projects", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_construction_projects; i++) {
         const struct Construction *proj = &c->construction_projects[i];
-        static const float ratio[5] = {0.20f, 0.05f, 0.45f, 0.15f, 0.15f};
-        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 5, ratio);
+        static const float ratio[] = {0.25f, 0.05f, 0.35f, 0.15f, 0.05f, 0.15f};
+        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
 
         nk_label(ctx, proj->name_str,
                  NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
@@ -1389,6 +1422,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
                   proj->cost);
         nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days",
                   proj->construction_time);
+
+        nk_spacing(ctx, 1);
 
         // TODO: Add visual indication or smt to show that building failed
         // or started
@@ -1431,18 +1466,20 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
       nk_tree_pop(ctx);
     }
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Manage constructions", NK_MINIMIZED)) {
+    // Constructions built
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Manage constructions", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_constructions; i++) {
         struct Construction *con = &c->constructions[i];
         if (!con->construction_finished) {
           continue;
         }
 
-        const float ratio[2] = {0.90f, 0.10f};
+        const float ratio[2] = {0.85f, 0.15f};
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 2, ratio);
 
-        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "%s - %s",
-                  con->name_str, con->description_str);
+        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
+                  "%s (%s) - %s", con->effect->name_str, con->name_str,
+                  con->description_str);
 
         // Construction detail menu
         if (nk_button_label(ctx, "Manage")) {
@@ -1492,7 +1529,7 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
               win_width, win_height);
   if (nk_begin(ctx, "Political", win_rect, win_flags)) {
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Laws", NK_MINIMIZED)) {
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Laws", NK_MAXIMIZED)) {
 
       nk_layout_row_dynamic(ctx, 0.0f, 2);
 
@@ -1551,7 +1588,7 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
       nk_tree_pop(ctx);
     }
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Cursus Honorum", NK_MINIMIZED)) {
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Cursus Honorum", NK_MAXIMIZED)) {
       for (size_t i = 0; i < 2; i++) {
         nk_button_label(ctx, "Appoint Aedile to ...");
       }
@@ -1736,44 +1773,59 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
     nk_layout_row_dynamic(ctx, GUI.icon_size.x + 10.0f, 1);
     if (nk_group_begin(ctx, "gui_main_windows", NK_WINDOW_NO_SCROLLBAR)) {
-      nk_layout_row_static(ctx, GUI.icon_size.x, GUI.icon_size.y, 8);
+      nk_layout_row_static(ctx, GUI.icon_size.x, GUI.icon_size.y, 13);
+
+      {
+        NK_TOOLTIP(
+            ctx,
+            if (nk_button_image(ctx, GUI.military_icon)) {
+              open_military_window = !open_military_window;
+            },
+            "Military menu");
+      }
+
+      {
+        nk_spacing(ctx, 1);
+
+        NK_TOOLTIP(
+            ctx,
+            if (nk_button_image(ctx, GUI.political_icon)) {
+              open_political_window = !open_political_window;
+            },
+            "Political menu");
+      }
+
+      {
+        nk_spacing(ctx, 1);
+
+        NK_TOOLTIP(
+            ctx,
+            if (nk_button_image(ctx, GUI.diplomatic_icon)) {
+              open_diplomatic_window = !open_diplomatic_window;
+            },
+            "Diplomatic menu");
+      }
+
+      {
+        nk_spacing(ctx, 1);
+
+        NK_TOOLTIP(
+            ctx,
+            if (nk_button_image(ctx, GUI.construction_icon)) {
+              open_construction_window = !open_construction_window;
+            },
+            "Construction menu");
+      }
 
       nk_spacing(ctx, 1);
-
-      if (nk_button_image(ctx, GUI.military_icon)) {
-        open_military_window = !open_military_window;
-      }
-
-      // TODO: Add
-      // tooltipstooltip/*stooltip/*stooltip/*stooltip/*stooltip/*stooltip/*stooltip/*s
-      /*nk_layout_row_static(ctx, 30, 150, 1);
-      const struct nk_input *in = &ctx->input;
-      struct nk_rect bounds = nk_widget_bounds(ctx);
-      nk_label(ctx, "Hover me for tooltip", NK_TEXT_LEFT);
-      if (nk_input_is_mouse_hovering_rect(in, bounds))
-      nk_tooltip(ctx, "This is a t*/
-
-      if (nk_button_image(ctx, GUI.political_icon)) {
-        open_political_window = !open_political_window;
-      }
-
-      if (nk_button_image(ctx, GUI.diplomatic_icon)) {
-        open_diplomatic_window = !open_diplomatic_window;
-      }
-
-      if (nk_button_image(ctx, GUI.construction_icon)) {
-        open_construction_window = !open_construction_window;
-      }
-
       if (nk_button_label(ctx, "Event log")) {
         open_event_log_window = !open_event_log_window;
       }
 
+      nk_spacing(ctx, 1);
       if (nk_button_label(ctx, "Help")) {
         open_help_window = !open_help_window;
       }
-
-      nk_spacing(ctx, 1);
 
       nk_group_end(ctx);
     }
@@ -2065,7 +2117,7 @@ int main(void) {
                                   .description_str =
                                       "Provides fresh water for the city.",
                                   .cost = 25.0f,
-                                  .maintenance = 0.25f,
+                                  .maintenance = 0.2f,
                                   .construction_time = 6 * 30,
                                   .effect = &aqueduct_construction_effect,
                                   .num_effects = 1};
@@ -2114,15 +2166,16 @@ int main(void) {
                                                 wheat_farm_construction_effect,
                                                 olive_farm_construction_effect};
 
-  struct Construction farm = {.cost = 2.0f,
-                              .construction_time = 10,
-                              .maintenance = 0.0f,
-                              .name_str = "Farm",
-                              .help_str = farm_help_str,
-                              .description_str =
-                                  "Piece of land producing various produce.",
-                              .effect = farm_construction_effects,
-                              .num_effects = 3};
+  struct Construction farm = {
+      .cost = 2.0f,
+      .construction_time = 10,
+      .maintenance = 0.0f,
+      .name_str = "Farm",
+      .help_str = farm_help_str,
+      .description_str = "Piece of land producing various produce.",
+      .effect = farm_construction_effects,
+      .num_effects = 3,
+      .gui_construction_management = gui_farm_construction_management};
 
   struct Effect basilica_construction_effect = {
       .name_str = "Basilica",
@@ -2199,7 +2252,7 @@ int main(void) {
           "Used in festivals & sacrifies and other Roman traditions",
       .help_str = temple_help_str,
       .cost = 25.0f,
-      .maintenance = 0.15f,
+      .maintenance = 0.12f,
       .construction_time = 5 * 30,
       .effect = temple_effects,
       .num_effects = 3};
@@ -2253,7 +2306,7 @@ int main(void) {
       .help_str = villa_publica_help_str,
       .description_str = "Censors base of operations during the Republic",
       .cost = 50.0f,
-      .maintenance = 0.5f,
+      .maintenance = 0.25f,
       .construction_time = 60,
       .effect = &villa_publica_construction_effect,
       .num_effects = 1};
@@ -2265,7 +2318,7 @@ int main(void) {
                                         .help_str = circus_maximus_help_str,
                                         .description_str = "",
                                         .cost = 100.0f,
-                                        .maintenance = 1.0f,
+                                        .maintenance = 1.10f,
                                         .construction_time = 12 * 30,
                                         .effect =
                                             &circus_maximus_construction_effect,
@@ -2279,7 +2332,7 @@ int main(void) {
                               .description_str =
                                   bath_description_strs[CONFIG.LANGUAGE],
                               .cost = 100.0f,
-                              .maintenance = 1.5f,
+                              .maintenance = 0.8f,
                               .construction_time = 12 * 10,
                               .effect = &bath_construction_effect,
                               .num_effects = 1};
