@@ -609,6 +609,7 @@ struct Construction {
   float construction_cost;     // Cost in gold per timestep construction period
   float cost;
   float maintenance;
+  // NOTE: Effect.description_str provides gameplay information in short format
   struct Effect *effect;
   size_t num_effects;       // Construction variants
   size_t construction_time; // Time to build in timesteps (days)
@@ -1075,7 +1076,26 @@ void building_tick_effect(struct Effect *e, const struct City *c,
   }
 }
 
-void city_enact_law(struct City *c, struct Law *l) {
+/// Returns true if the law was successfully enacted
+bool city_enact_law(struct City *c, struct Law *l) {
+  switch (l->type) {
+  case Political:
+    if (c->political_usage + l->cost > c->political_capacity) {
+      return false;
+    }
+    break;
+  case Diplomatic:
+    if (c->diplomatic_usage + l->cost > c->diplomatic_capacity) {
+      return false;
+    }
+    break;
+  case Military:
+    if (c->military_usage + l->cost > c->military_capacity) {
+      return false;
+    }
+    break;
+  }
+
   l->date_passed = date;
   l->passed = true;
 
@@ -1084,6 +1104,8 @@ void city_enact_law(struct City *c, struct Law *l) {
   city_add_effect(c, enact_law_effect);
 
   city_add_effect(c, *l->effect);
+
+  return true;
 }
 
 void build_construction(struct City *c, const struct Construction cp,
@@ -1354,6 +1376,9 @@ void gui_farm_construction_management(struct nk_context *ctx,
 
 void gui_construction_detail_menu(struct Construction *con,
                                   struct nk_context *ctx) {
+  assert(con);
+  assert(ctx);
+
   const nk_flags flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE |
                          NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE;
   const uint32_t win_width = 400;
@@ -1364,6 +1389,7 @@ void gui_construction_detail_menu(struct Construction *con,
               win_width, win_height);
   if (nk_begin(ctx, con->name_str, win_rect, flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
+    nk_label_wrap(ctx, con->effect->description_str);
     nk_label_wrap(ctx, con->help_str);
 
     if (con->gui_construction_management) {
@@ -1389,6 +1415,7 @@ void gui_construction_help_menu(const struct Construction *con,
               win_width, win_height);
   if (nk_begin(ctx, con->name_str, win_rect, flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
+    nk_label_wrap(ctx, con->effect->description_str);
     nk_label_wrap(ctx, con->help_str);
   }
   nk_end(ctx);
@@ -1478,13 +1505,15 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 2, ratio);
 
         nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
-                  "%s (%s) - %s", con->effect->name_str, con->name_str,
+                  "%s - %s", con->name_str,
                   con->description_str);
 
-        // Construction detail menu
-        if (nk_button_label(ctx, "Manage")) {
-          open_construction_detail_menu = !open_construction_detail_menu;
-          detail_menu_proj = con;
+        if (con->gui_construction_management) {
+          // Construction detail menu
+          if (nk_button_label(ctx, "Manage")) {
+            open_construction_detail_menu = !open_construction_detail_menu;
+            detail_menu_proj = con;
+          }
         }
       }
       nk_tree_pop(ctx);
@@ -1550,14 +1579,15 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
 
       switch (active_pane) {
       case 0:
-        nk_layout_row_dynamic(ctx, 0.0f, 1);
         for (size_t i = 0; i < c->num_available_laws; i++) {
           struct Law *law = &c->available_laws[i];
           if (!law->passed) {
             continue;
           }
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
+            nk_layout_row_dynamic(ctx, 50.0f, 1);
             nk_label_wrap(ctx, law->description_str);
+            nk_layout_row_dynamic(ctx, 0.0f, 1);
             nk_labelf_wrap(ctx, "Passed: %u BC", law->date_passed.year);
             if (law->gui_handler) {
               law->gui_handler(ctx, law);
@@ -1577,6 +1607,7 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
             nk_label_wrap(ctx, law->description_str);
             if (nk_button_label(ctx, "Enact")) {
+              // TODO: Implement positive/negative feedback based success or not
               city_enact_law(c, law);
             }
             nk_tree_pop(ctx);
@@ -1688,8 +1719,8 @@ void gui_widget_capacity(struct City *c, struct nk_context *ctx,
 
       nk_layout_row_dynamic(ctx, 0.0f, 1);
 
-      uint64_t curr = *usage;
-      nk_progress(ctx, &curr, capacity, nk_false);
+      const uint64_t curr = *usage;
+      nk_prog(ctx, curr, capacity, nk_false);
 
       nk_group_end(ctx);
     }
@@ -1762,7 +1793,7 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     free(numeral_str);
 
     // Capacities
-    nk_layout_row_dynamic(ctx, 0.0f, 3);
+    nk_layout_row_dynamic(ctx, 30.0f, 3);
     nk_label(ctx, "Military", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
     nk_label(ctx, "Political", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
     nk_label(ctx, "Diplomatic", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
@@ -2099,7 +2130,7 @@ int main(void) {
   struct Construction port_ostia = {
       .name_str = "Port Ostia",
       .description_str = "Enables import and export of foodstuffs to Rome.",
-      .help_str = port_ostia_help_str,
+      .help_str = port_ostia_help_str[CONFIG.LANGUAGE],
       .cost = 100.0f,
       .maintenance = 1.0f,
       .construction_time = 12 * 30,
@@ -2112,15 +2143,15 @@ int main(void) {
       .duration = FOREVER,
       .tick_effect = aqueduct_tick_effect};
 
-  struct Construction aqueduct = {.name_str = "Aqueduct",
-                                  .help_str = aqueduct_help_str,
-                                  .description_str =
-                                      "Provides fresh water for the city.",
-                                  .cost = 25.0f,
-                                  .maintenance = 0.2f,
-                                  .construction_time = 6 * 30,
-                                  .effect = &aqueduct_construction_effect,
-                                  .num_effects = 1};
+  struct Construction aqueduct = {
+      .name_str = "Aqueduct",
+      .help_str = aqueduct_help_str[CONFIG.LANGUAGE],
+      .description_str = "Provides fresh water for the city.",
+      .cost = 25.0f,
+      .maintenance = 0.2f,
+      .construction_time = 6 * 30,
+      .effect = &aqueduct_construction_effect,
+      .num_effects = 1};
 
   // TODO: Plot food production of the year (year report?)
   struct FarmArgument grape_farm_arg = {
@@ -2171,7 +2202,7 @@ int main(void) {
       .construction_time = 10,
       .maintenance = 0.0f,
       .name_str = "Farm",
-      .help_str = farm_help_str,
+      .help_str = farm_help_str[CONFIG.LANGUAGE],
       .description_str = "Piece of land producing various produce.",
       .effect = farm_construction_effects,
       .num_effects = 3,
@@ -2183,15 +2214,15 @@ int main(void) {
       .duration = FOREVER,
       .tick_effect = basilica_tick_effect};
 
-  struct Construction basilica = {.cost = 15.0f,
-                                  .maintenance = 0.2f,
-                                  .construction_time = 3 * 30,
-                                  .name_str = "Basilica",
-                                  .help_str = basilica_help_str,
-                                  .description_str =
-                                      "Public building used official matters.",
-                                  .effect = &basilica_construction_effect,
-                                  .num_effects = 1};
+  struct Construction basilica = {
+      .cost = 15.0f,
+      .maintenance = 0.2f,
+      .construction_time = 3 * 30,
+      .name_str = "Basilica",
+      .help_str = basilica_help_str[CONFIG.LANGUAGE],
+      .description_str = "Public building used official matters.",
+      .effect = &basilica_construction_effect,
+      .num_effects = 1};
 
   struct Effect forum_construction_effect = {.name_str = "Forum",
                                              .description_str =
@@ -2203,7 +2234,7 @@ int main(void) {
                                .maintenance = 0.5f,
                                .construction_time = 12 * 30,
                                .name_str = "Forum",
-                               .help_str = forum_help_str,
+                               .help_str = forum_help_str[CONFIG.LANGUAGE],
                                .description_str = "Public space for commerce.",
                                .effect = &forum_construction_effect,
                                .num_effects = 1};
@@ -2219,7 +2250,8 @@ int main(void) {
                                    .maintenance = 0.1f,
                                    .construction_time = 2 * 30,
                                    .name_str = "Coin mint",
-                                   .help_str = coin_mint_help_str,
+                                   .help_str =
+                                       coin_mint_help_str[CONFIG.LANGUAGE],
                                    .description_str = "Produces coinage.",
                                    .effect = &coin_mint_construction_effect,
                                    .num_effects = 1};
@@ -2250,7 +2282,7 @@ int main(void) {
       .name_str = "Temple",
       .description_str =
           "Used in festivals & sacrifies and other Roman traditions",
-      .help_str = temple_help_str,
+      .help_str = temple_help_str[CONFIG.LANGUAGE],
       .cost = 25.0f,
       .maintenance = 0.12f,
       .construction_time = 5 * 30,
@@ -2265,7 +2297,7 @@ int main(void) {
 
   struct Construction senate_house = {
       .name_str = "Senate house",
-      .help_str = senate_house_help_str,
+      .help_str = senate_house_help_str[CONFIG.LANGUAGE],
       .description_str = "Meeting place of the lawmaking part of the Republic",
       .cost = 50.0f,
       .maintenance = 0.05f,
@@ -2277,7 +2309,7 @@ int main(void) {
       .name_str = "Insula", .duration = 300, .tick_effect = insula_tick_effect};
 
   struct Construction insula = {.name_str = "Insula",
-                                .help_str = insula_help_str,
+                                .help_str = insula_help_str[CONFIG.LANGUAGE],
                                 .description_str =
                                     "Apartment block with space for ",
                                 .cost = 10.0f,
@@ -2290,7 +2322,7 @@ int main(void) {
       .name_str = "Bakery", .duration = 0, .tick_effect = bakery_tick_effect};
 
   struct Construction bakery = {.name_str = "Bakery",
-                                .help_str = bakery_help_str,
+                                .help_str = bakery_help_str[CONFIG.LANGUAGE],
                                 .description_str = "Roman breakmaking industry",
                                 .cost = 15.0f,
                                 .maintenance = 0.05f,
@@ -2303,7 +2335,7 @@ int main(void) {
 
   struct Construction villa_publica = {
       .name_str = "Villa Publica",
-      .help_str = villa_publica_help_str,
+      .help_str = villa_publica_help_str[CONFIG.LANGUAGE],
       .description_str = "Censors base of operations during the Republic",
       .cost = 50.0f,
       .maintenance = 0.25f,
@@ -2314,21 +2346,21 @@ int main(void) {
   struct Effect circus_maximus_construction_effect = {
       .duration = FOREVER, .tick_effect = &circus_maximus_tick_effect};
 
-  struct Construction circus_maximus = {.name_str = "Circus Maximus",
-                                        .help_str = circus_maximus_help_str,
-                                        .description_str = "",
-                                        .cost = 100.0f,
-                                        .maintenance = 1.10f,
-                                        .construction_time = 12 * 30,
-                                        .effect =
-                                            &circus_maximus_construction_effect,
-                                        .num_effects = 1};
+  struct Construction circus_maximus = {
+      .name_str = "Circus Maximus",
+      .help_str = circus_maximus_help_str[CONFIG.LANGUAGE],
+      .description_str = "",
+      .cost = 100.0f,
+      .maintenance = 1.10f,
+      .construction_time = 12 * 30,
+      .effect = &circus_maximus_construction_effect,
+      .num_effects = 1};
 
   struct Effect bath_construction_effect = {.duration = FOREVER,
                                             .tick_effect = &bath_tick_effect};
 
   struct Construction bath = {.name_str = "Bath house",
-                              .help_str = bath_help_str,
+                              .help_str = bath_help_str[CONFIG.LANGUAGE],
                               .description_str =
                                   bath_description_strs[CONFIG.LANGUAGE],
                               .cost = 100.0f,
@@ -2379,7 +2411,8 @@ int main(void) {
 
   struct Law land_tax = {.name_str = "Lex Tributum Soli",
                          .description_str =
-                             "Roman land tax based on size of the land",
+                             "Roman land tax based on size of the land. Costs "
+                             "1 Poltical power of the course of 3 months.",
                          .cost = 1,
                          .cost_lng = 3 * 30,
                          .type = Political,
