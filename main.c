@@ -73,11 +73,15 @@ struct Resolution {
   int32_t height;
 };
 
+/// NOTE: Forward declarations basically
+struct City;
+
 /// Game configuration initialized once at startup
 // NOTE: Please see documentation for explainations
 static struct {
   char *FILEPATH_ROOT;
   char *FILEPATH_RSRC;
+  char *FILEPATH_SAVE;
   bool GUI;
   bool HARD_MODE;
   bool FULLSCREEN;
@@ -579,7 +583,10 @@ struct FarmArgument {
 
 struct CursusHonorum {
   bool aedile_enabled;
+  struct Construction *aedile_assigned_construction;
+
   bool censor_enabled;
+  bool governor_enabled;
 };
 
 // Roman Lex (pl. leges)
@@ -617,7 +624,7 @@ struct Construction {
   struct Date construction_completed;
   // Callback to the management pane of the construction
   void (*gui_construction_management)(struct nk_context *ctx,
-                                      struct Construction *con);
+                                      struct Construction *con, struct City *c);
 };
 
 struct City {
@@ -630,6 +637,7 @@ struct City {
   size_t land_area;      // Land area available (used by farms, mansio, castrum)
   size_t land_area_used; // Land used
   float food_production; // Excess food creates population & gold
+  float food_production_modifier;
   float food_usage;
   // Gold
   float gold; // Gold creates food (negative counts as debt)
@@ -806,7 +814,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->cursus_honorum = c->cursus_honorum;
 
   // Compute effects affecting the change of rate
-  for (int32_t i = 0; i < c1->num_effects; i++) {
+  for (size_t i = 0; i < c1->num_effects; i++) {
     if (c1->effects[i].scheduled_for_removal) {
       c1->effects[i] = c1->effects[c1->num_effects - 1];
       c1->num_effects--;
@@ -856,6 +864,9 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
     }
   }
 
+  // Apply modifiers
+  c1->food_production *= c1->food_production_modifier;
+
   // Compute changes during this timestep
   population_calculation(c, c1);
 
@@ -887,7 +898,10 @@ void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
 void aqueduct_tick_effect(struct Effect *e, const struct City *c,
                           struct City *c1) {
   c1->diplomatic_capacity += 1;
-  // TODO: Just add some food?
+  c1->food_production_modifier += 0.05f;
+  if (c->cursus_honorum->aedile_assigned_construction == e->arg) {
+    c1->food_production_modifier += 0.15f;
+  }
 }
 
 void basilica_tick_effect(struct Effect *e, const struct City *c,
@@ -1048,10 +1062,10 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   c1->gold_usage += arg->construction_cost;
 
-  const int lng = snprintf(NULL, 0, "%ld days left, - %.2f gold / day",
+  const int lng = snprintf(NULL, 0, "%lli days left, - %.2f gold / day",
                            e->duration, arg->construction_cost) +
                   1;
-  snprintf(e->description_str, lng, "%ld days left, - %.2f gold / day",
+  snprintf(e->description_str, lng, "%lli days left, - %.2f gold / day",
            e->duration, arg->construction_cost);
 
   // TODO: Delay risk per construction and the political environment
@@ -1065,6 +1079,7 @@ void building_tick_effect(struct Effect *e, const struct City *c,
     arg->construction_finished = true;
     arg->construction_completed = date;
     arg->construction_in_progress = false;
+    arg->effect->arg = arg; // NOTE: Link the Construction and Effect
 
     eventlog_add_msgf(c1->log, "Finished construction of a %s",
                       arg->effect->name_str);
@@ -1359,23 +1374,33 @@ struct nk_image nk_image_load(const char *filename) {
 }
 
 void gui_farm_construction_management(struct nk_context *ctx,
-                                      struct Construction *con) {
+                                      struct Construction *con,
+                                      struct City *c) {
   assert(con);
   assert(ctx);
-  const struct FarmArgument *arg = (struct FarmArgument *)con->effect->arg;
+
+  struct FarmArgument *arg = (struct FarmArgument *)con->effect->arg;
   assert(arg && "Farm construction's effect lacks argument");
 
-  nk_layout_row_dynamic(ctx, 0.0f, 1);
-  struct nk_property_variant variant =
-      nk_property_variant_int(arg->area, 0, 100, 1);
+  const float ratio[3] = {0.20f, 0.60f, 0.20f};
+  nk_layout_row(ctx, NK_DYNAMIC, 3, 0.0f, ratio);
 
-  const char *area_tooltip_str = "Each increase in jugerum cost 1 gold";
-  NK_TOOLTIP(ctx, nk_property(ctx, "Area", &variant, 1.0f, NK_FILTER_INT),
-             area_tooltip_str);
+  const char *tooltip_str = "Each increase in jugerum cost 1 gold";
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Current land area: %lu", arg->area);
+  nk_spacing(ctx, 1);
+  NK_TOOLTIP(
+      ctx,
+      if (nk_button_symbol(ctx, NK_SYMBOL_PLUS)) {
+        if (c->gold >= 1) {
+          c->gold--;
+          arg->area++;
+        }
+      },
+      tooltip_str);
 }
 
 void gui_construction_detail_menu(struct Construction *con,
-                                  struct nk_context *ctx) {
+                                  struct nk_context *ctx, struct City *c) {
   assert(con);
   assert(ctx);
 
@@ -1393,8 +1418,24 @@ void gui_construction_detail_menu(struct Construction *con,
     nk_label_wrap(ctx, con->help_str);
 
     if (con->gui_construction_management) {
-      con->gui_construction_management(ctx, con);
+      con->gui_construction_management(ctx, con, c);
     }
+
+    char *maintained_str = NULL;
+    if (con->maintained) {
+      maintained_str = "Disable maintenance";
+    } else {
+      maintained_str = "Enable maintenance";
+    }
+    const char *tooltip_str =
+        "Maintained: costs gold, gives effects. Unmaintained: costs no gold, "
+        "gives no effect, might cause other side effects to occur.";
+    NK_TOOLTIP(
+        ctx,
+        if (nk_button_label(ctx, maintained_str)) {
+          con->maintained = !con->maintained;
+        },
+        tooltip_str);
 
     if (nk_button_label(ctx, "Destroy building")) {
       // TODO: Implement ?
@@ -1415,7 +1456,7 @@ void gui_construction_help_menu(const struct Construction *con,
               win_width, win_height);
   if (nk_begin(ctx, con->name_str, win_rect, flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
-    nk_label_wrap(ctx, con->effect->description_str);
+    nk_labelf_wrap(ctx, "Effect: %s", con->effect->description_str);
     nk_label_wrap(ctx, con->help_str);
   }
   nk_end(ctx);
@@ -1504,9 +1545,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         const float ratio[2] = {0.85f, 0.15f};
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 2, ratio);
 
-        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
-                  "%s - %s", con->name_str,
-                  con->description_str);
+        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "%s - %s",
+                  con->name_str, con->description_str);
 
         if (con->gui_construction_management) {
           // Construction detail menu
@@ -1529,7 +1569,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
 
   if (open_construction_detail_menu) {
     assert(detail_menu_proj);
-    gui_construction_detail_menu(detail_menu_proj, ctx);
+    gui_construction_detail_menu(detail_menu_proj, ctx, c);
   }
 }
 
@@ -1620,8 +1660,36 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
     }
 
     if (nk_tree_push(ctx, NK_TREE_TAB, "Cursus Honorum", NK_MAXIMIZED)) {
-      for (size_t i = 0; i < 2; i++) {
-        nk_button_label(ctx, "Appoint Aedile to ...");
+      if (c->cursus_honorum->aedile_enabled) {
+        if (c->cursus_honorum->aedile_assigned_construction) {
+          nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Aedile assigned to %s",
+                    c->cursus_honorum->aedile_assigned_construction->name_str);
+        } else {
+          if (nk_group_begin(ctx, "assign_aedile",
+                             NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
+            nk_layout_row_dynamic(ctx, 0.0f, 1);
+
+            const struct nk_vec2 menu_size =
+                nk_vec2(200, 100 * c->num_constructions);
+
+            const char *ui_str = "Assign Aedile to ...";
+            if (nk_menu_begin_label(ctx, ui_str, NK_TEXT_ALIGN_CENTERED,
+                                    menu_size)) {
+              nk_layout_row_dynamic(ctx, 0.0f, 1);
+              for (size_t i = 0; i < c->num_constructions; i++) {
+                if (nk_menu_item_label(ctx, c->constructions[i].name_str,
+                                       NK_TEXT_ALIGN_CENTERED |
+                                           NK_TEXT_ALIGN_MIDDLE)) {
+                  c->cursus_honorum->aedile_assigned_construction =
+                      &c->constructions[i];
+                }
+              }
+              nk_menu_end(ctx);
+            }
+
+            nk_group_end(ctx);
+          }
+        }
       }
       nk_tree_pop(ctx);
     }
@@ -1631,15 +1699,30 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
 }
 
 void gui_diplomatic_menu(struct City *c, struct nk_context *ctx) {
-  // TODO:
+  // TODO: Implement diplomatic menu
 }
 
 void gui_military_menu(struct City *c, struct nk_context *ctx) {
-  // TODO:
+  // TODO: Implement military menu
 }
 
 void gui_help_menu(struct City *c, struct nk_context *ctx) {
   // TODO: Help menu is used to look things up and search for in-game things
+}
+
+// Saves the City state to the save folder from the CONFIG
+bool save_game_to_json(const struct City *c) {
+  // TODO: Wrap the save_game_to_json up
+
+  cJSON *root = cJSON_CreateObject();
+  cJSON_AddNumberToObject(root, "gold", c->gold);
+
+  const char *str = cJSON_Print(root);
+  if (str) {
+    fprintf(stderr, "%s \n", str);
+  }
+
+  return true;
 }
 
 // TODO: Display gametime, something fun in the ingame menu
@@ -1655,7 +1738,8 @@ void gui_ingame_menu(struct City *c, struct nk_context *ctx) {
   if (nk_begin(ctx, "Menu", win_rect, win_flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     if (nk_button_label(ctx, "Save game")) {
-      // TODO: Save game
+      // TODO: Save game handling
+      const bool success = save_game_to_json(c);
     }
 
     if (nk_button_label(ctx, "Load game")) {
@@ -1870,7 +1954,8 @@ void update_gui(struct City *c, struct nk_context *ctx) {
                 "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
       nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
                 "Food: %.2f", c->food_production - c->food_usage);
-
+      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
+                "Land area: %zu / %zu", c->land_area_used, c->land_area);
       nk_tree_pop(ctx);
     }
 
@@ -1944,6 +2029,14 @@ void parse_config_file() {
           cJSON_GetObjectItemCaseSensitive(json, "root_folder");
       if (cJSON_IsString(root_folder) && root_folder->valuestring) {
         CONFIG.FILEPATH_ROOT = root_folder->valuestring;
+      }
+
+      struct cJSON *save_folder =
+          cJSON_GetObjectItemCaseSensitive(json, "save_folder");
+      if (cJSON_IsString(save_folder) && save_folder->valuestring) {
+        CONFIG.FILEPATH_SAVE = save_folder->valuestring;
+      } else {
+        CONFIG.FILEPATH_SAVE = CONFIG.FILEPATH_ROOT;
       }
 
       struct cJSON *gui = cJSON_GetObjectItem(json, "gui");
@@ -2029,7 +2122,8 @@ int main(void) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_WindowFlags win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+  SDL_WindowFlags win_flags =
+      SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
   if (CONFIG.FULLSCREEN) {
     win_flags |= SDL_WINDOW_FULLSCREEN;
   }
@@ -2306,12 +2400,15 @@ int main(void) {
       .num_effects = 1};
 
   struct Effect insula_construction_effect = {
-      .name_str = "Insula", .duration = 300, .tick_effect = insula_tick_effect};
+      .name_str = "Insula",
+      .description_str = "+300 population",
+      .duration = 300,
+      .tick_effect = insula_tick_effect};
 
   struct Construction insula = {.name_str = "Insula",
                                 .help_str = insula_help_str[CONFIG.LANGUAGE],
                                 .description_str =
-                                    "Apartment block with space for ",
+                                    insula_description_strs[CONFIG.LANGUAGE],
                                 .cost = 10.0f,
                                 .maintenance = 0.05f,
                                 .construction_time = 60,
@@ -2323,7 +2420,8 @@ int main(void) {
 
   struct Construction bakery = {.name_str = "Bakery",
                                 .help_str = bakery_help_str[CONFIG.LANGUAGE],
-                                .description_str = "Roman breakmaking industry",
+                                .description_str =
+                                    "Roman bread making industry",
                                 .cost = 15.0f,
                                 .maintenance = 0.05f,
                                 .construction_time = 45,
@@ -2522,6 +2620,10 @@ int main(void) {
     case BARBARIANS_TAKEOVER:
       // TODO:
       break;
+    case REPUBLIC:
+      break;
+    default:
+      assert(false && "Invalid game state reached");
     }
 #endif
 

@@ -8,9 +8,10 @@ enum LANGUAGES { en, NUM_LANGUAGES };
 // ----- HELP STRINGS -----
 // Help strings are displayed in their own window as a detailed explanation
 // coupled with a teaspoon of historical content to give the text its context.
+// They are longer than description strings and are the full explanation of their
+// relevant subject excluding providing gameplay information (stats, etc)
 
 // TODO: Adopt these conventions in main.c
-// ----- CONSTRUCTIONS -----
 const char *aqueduct_help_str[NUM_LANGUAGES] = {"Provides water to baths and foundations."};
 const char *basilica_help_str[NUM_LANGUAGES] = {""};
 const char *farm_help_str[NUM_LANGUAGES] = {"Produces food."};
@@ -26,5 +27,8 @@ const char *villa_publica_help_str[NUM_LANGUAGES] = {""};
 const char *bath_help_str[NUM_LANGUAGES] = {""};
 
 // ----- DESCRIPTION STRINGS -----
+// Description string are displayed where space is constrained and is a short
+// explanatory text that may include gameplay information for the UI.
 const char *bath_description_strs[NUM_LANGUAGES] = {
     "Roman bath complexes was a crucial part of life in the city"};
+const char *insula_description_strs[NUM_LANGUAGES] = {"Apartment block with space for 300 residents."};

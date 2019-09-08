@@ -1,0 +1,58 @@
+* Rome: Total Simulation (RTS)
+This project was born out of a love of Roman history and the lack of deep and
+fun historical simulators that did not skimp on the details.
+
+* Gameplay
+In Rome: Total Simulation your goal is to ensure that Rome survives the struggle
+between the patricians and plebians known as the conflict of the orders. The
+game takes place from 350 BC to around 0 AD.
+
+// TODO: Add from the GDD 
+** Constructions
+*** Manage constructions
+** Law
+*** Cursus Honorum
+
+* Project related
+** Config file 
+The configuration file is a json file located at the root folder in the project.
+This file contains various properties of the game that can be modified and
+change such as the difficulty, save folder path, GUI/TUI, fullscreen, etc.
+
+*** Properties
+- root\_folder :: (string) filepath to the folder containing the entire project (resource
+                 folder, etc)
+- save\_folder :: (string) filepath to the folder that will contain the saved gamestates
+- gui :: turn off/on the graphical user interface (if false TUI is on)
+- hard\_mode :: (bool) enables hard mode which will use Latin as the language and
+               Roman measurements
+- language :: (integer) determines which language the game will use (0 - US
+              English, more to come in the future)
+- fullscreen :: (bool) starts the game in fullscreen (changeable in the options
+                menu in game as well)
+- resolution :: (object) window size of the game when starting, recommended use
+                is to just use fullscreen
+- - width :: (int) window width
+- - height :: (int) window height
+
+** Contribute
+Bugfixes and various other coding related contributions are encouraged.
+
+*** Issues/problems
+Find something that does not work or dare I say it, a crash? Open an issue on
+Github and provide the following information.
+
+- What happened?
+- Steps to reproduce
+  1. First ...
+  2. ... then ... and so on.
+- Screenshot [Optional]
+- Setup (OS, config.json, etc)
+
+*** Translations
+Usually the strings that need to be translated are in files with names such as
+'ui_xxx.h'. Spelling and grammar fixes are also encourages and helpful to the
+project as a whole.
+
+** License
+MIT License (public domain)

@@ -1,7 +1,7 @@
 {
     "root_folder": "/home/alexander/repos/ColoniaC/",
+    "save_folder": "/Users/lingtorp/repos/colonia/",
     "gui": false,
-    "tui": true,
     "hard_mode": false,
     "language": 0,
     "fullscreen": false,
