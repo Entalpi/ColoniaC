@@ -768,6 +768,7 @@ void population_calculation(const struct City *c, struct City *c1) {
   // current value (see farm_tick_effect)
   // TODO: Limit 1 of each type of farm (or even building)
 
+  // TODO: Bad to use avg. when I know how much of each produce is produced ...
   float avg_food_price = 0.0f;
   for (size_t i = 0; i < NUMBER_OF_PRODUCE; i++) {
     avg_food_price += c->produce_values[i];
@@ -1062,10 +1063,10 @@ void building_tick_effect(struct Effect *e, const struct City *c,
 
   c1->gold_usage += arg->construction_cost;
 
-  const int lng = snprintf(NULL, 0, "%lli days left, - %.2f gold / day",
+  const int lng = snprintf(NULL, 0, "%li days left, - %.2f gold / day",
                            e->duration, arg->construction_cost) +
                   1;
-  snprintf(e->description_str, lng, "%lli days left, - %.2f gold / day",
+  snprintf(e->description_str, lng, "%li days left, - %.2f gold / day",
            e->duration, arg->construction_cost);
 
   // TODO: Delay risk per construction and the political environment
@@ -1079,7 +1080,6 @@ void building_tick_effect(struct Effect *e, const struct City *c,
     arg->construction_finished = true;
     arg->construction_completed = date;
     arg->construction_in_progress = false;
-    arg->effect->arg = arg; // NOTE: Link the Construction and Effect
 
     eventlog_add_msgf(c1->log, "Finished construction of a %s",
                       arg->effect->name_str);
@@ -1382,11 +1382,12 @@ void gui_farm_construction_management(struct nk_context *ctx,
   struct FarmArgument *arg = (struct FarmArgument *)con->effect->arg;
   assert(arg && "Farm construction's effect lacks argument");
 
-  const float ratio[3] = {0.20f, 0.60f, 0.20f};
-  nk_layout_row(ctx, NK_DYNAMIC, 3, 0.0f, ratio);
+  const float ratio[3] = {0.50f, 0.40f, 0.10f};
+  nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
 
   const char *tooltip_str = "Each increase in jugerum cost 1 gold";
-  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Current land area: %lu", arg->area);
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
+            "Current land area: %lu jugerum", arg->area);
   nk_spacing(ctx, 1);
   NK_TOOLTIP(
       ctx,
@@ -2204,9 +2205,9 @@ int main(void) {
 
   struct City *city = &cities[0];
   city->name = "Eboracum";
-  city->gold = 100.0f;
+  city->gold = 10.0f;
   city->population = 300;
-  city->land_area = 100;
+  city->land_area = 10;
   city->produce_values = (float *)calloc(sizeof(float), NUMBER_OF_PRODUCE);
   city->produce_values[Grapes] = 0.35f;
   city->produce_values[Wheat] = 0.45f;
@@ -2690,6 +2691,9 @@ int main(void) {
   }
   if (CONFIG.FILEPATH_RSRC) {
     free((void *)CONFIG.FILEPATH_RSRC);
+  }
+  if (CONFIG.FILEPATH_SAVE) {
+    free((void *)CONFIG.FILEPATH_SAVE);
   }
 #ifdef USER_INTERFACE_GUI
   SDL_Quit();

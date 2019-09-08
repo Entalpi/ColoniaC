@@ -14,7 +14,7 @@ enum LANGUAGES { en, NUM_LANGUAGES };
 // TODO: Adopt these conventions in main.c
 const char *aqueduct_help_str[NUM_LANGUAGES] = {"Provides water to baths and foundations."};
 const char *basilica_help_str[NUM_LANGUAGES] = {""};
-const char *farm_help_str[NUM_LANGUAGES] = {"Produces food."};
+const char *farm_help_str[NUM_LANGUAGES] = {"The Roman society was in large part an agricultural one. On many farms like this one sprinkled around the provinces the mouths of the mighty city Rome was feed."};
 const char *senate_house_help_str[NUM_LANGUAGES] = {"Meeting place of the Senate. Enables Laws and increase political power."};
 const char *temple_help_str[NUM_LANGUAGES] = {"Increases various powers."};
 const char *coin_mint_help_str[NUM_LANGUAGES] = {"Reduces the negative effects of war. Increases gold income. Provides coinage."};
