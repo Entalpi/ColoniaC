@@ -569,6 +569,12 @@ bool eventlog_next_msg(struct EventLog *log, char **msg) {
   return true;
 }
 
+struct ForumArgument {
+  size_t taberna_capacity;
+  size_t num_taberna;
+  struct Construction *tabernas;
+};
+
 struct LandTaxArgument {
   float tax_percentage;
 };
@@ -966,9 +972,9 @@ void port_ostia_tick_effect(struct Effect *e, const struct City *c,
   // TODO:
 }
 
-void bakery_tick_effect(struct Effect *e, const struct City *c,
-                        struct City *c1) {
-  // TODO:
+void taberna_bakery_tick_effect(struct Effect *e, const struct City *c,
+                                struct City *c1) {
+  c1->food_production_modifier += 0.1f;
 }
 
 void villa_publica_tick_effect(struct Effect *e, const struct City *c,
@@ -1400,6 +1406,20 @@ void gui_farm_construction_management(struct nk_context *ctx,
       tooltip_str);
 }
 
+void gui_forum_construction_management(struct nk_context *ctx,
+                                       struct Construction *con,
+                                       struct City *c) {
+  assert(con);
+  assert(ctx);
+
+  struct ForumArgument *arg = (struct ForumArgument *)con->effect->arg;
+  assert(arg);
+
+  nk_layout_row_dynamic(ctx, 0.0f, 1);
+  nk_labelf(ctx, "Taberna spots: %u / %u", arg->num_taberna,
+            arg->taberna_capacity);
+}
+
 void gui_construction_detail_menu(struct Construction *con,
                                   struct nk_context *ctx, struct City *c) {
   assert(con);
@@ -1740,7 +1760,7 @@ void gui_ingame_menu(struct City *c, struct nk_context *ctx) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     if (nk_button_label(ctx, "Save game")) {
       // TODO: Save game handling
-      const bool success = save_game_to_json(c);
+      // const bool success = save_game_to_json(c);
     }
 
     if (nk_button_label(ctx, "Load game")) {
@@ -1946,15 +1966,16 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       nk_group_end(ctx);
     }
 
-    if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MAXIMIZED)) {
-      nk_layout_row_dynamic(ctx, 0.0f, 3);
+    nk_layout_row_dynamic(ctx, 0.0f, 3);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
+              "Population: %lu (%i)", c->population, c->population_delta);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
+              "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Food: %.2f",
+              c->food_production - c->food_usage);
 
-      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Population: %lu (%i)", c->population, c->population_delta);
-      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
-      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Food: %.2f", c->food_production - c->food_usage);
+    if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MINIMIZED)) {
+      nk_layout_row_dynamic(ctx, 0.0f, 1);
       nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
                 "Land area: %zu / %zu", c->land_area_used, c->land_area);
       nk_tree_pop(ctx);
@@ -2319,11 +2340,16 @@ int main(void) {
       .effect = &basilica_construction_effect,
       .num_effects = 1};
 
-  struct Effect forum_construction_effect = {.name_str = "Forum",
-                                             .description_str =
-                                                 "Public space for commerce.",
-                                             .duration = FOREVER,
-                                             .tick_effect = forum_tick_effect};
+  struct ForumArgument forum_trajan_arg = {.taberna_capacity = 3};
+
+  struct Effect forum_trajan_construction_effect = {
+      .name_str = "Forum of Trajan",
+      .description_str = "Public space for commerce and public life.",
+      .duration = FOREVER,
+      .arg = &forum_trajan_arg,
+      .tick_effect = forum_tick_effect};
+
+  struct Effect forum_effects[] = {forum_trajan_construction_effect};
 
   struct Construction forum = {.cost = 50.0f,
                                .maintenance = 0.5f,
@@ -2331,8 +2357,10 @@ int main(void) {
                                .name_str = "Forum",
                                .help_str = forum_help_str[CONFIG.LANGUAGE],
                                .description_str = "Public space for commerce.",
-                               .effect = &forum_construction_effect,
-                               .num_effects = 1};
+                               .gui_construction_management =
+                                   gui_forum_construction_management,
+                               .effect = forum_effects,
+                               .num_effects = sizeof(forum_effects)};
 
   struct Effect coin_mint_construction_effect = {
       .name_str = "Coin mint",
@@ -2416,19 +2444,6 @@ int main(void) {
                                 .effect = &insula_construction_effect,
                                 .num_effects = 1};
 
-  struct Effect bakery_construction_effect = {
-      .name_str = "Bakery", .duration = 0, .tick_effect = bakery_tick_effect};
-
-  struct Construction bakery = {.name_str = "Bakery",
-                                .help_str = bakery_help_str[CONFIG.LANGUAGE],
-                                .description_str =
-                                    "Roman bread making industry",
-                                .cost = 15.0f,
-                                .maintenance = 0.05f,
-                                .construction_time = 45,
-                                .effect = &bakery_construction_effect,
-                                .num_effects = 1};
-
   struct Effect villa_publica_construction_effect = {
       .duration = FOREVER, .tick_effect = &villa_publica_tick_effect};
 
@@ -2468,6 +2483,24 @@ int main(void) {
                               .effect = &bath_construction_effect,
                               .num_effects = 1};
 
+  struct Effect taberna_bakery_construction_effect = {
+      .name_str = "Bakery",
+      .description_str = taberna_bakery_help_strs[CONFIG.LANGUAGE],
+      .duration = 0,
+      .tick_effect = taberna_bakery_tick_effect};
+
+  struct Effect taberna_effects[] = {taberna_bakery_construction_effect};
+
+  struct Construction taberna = {.name_str = "Taberna",
+                                 .help_str = taberna_help_strs[CONFIG.LANGUAGE],
+                                 .description_str =
+                                     taberna_description_strs[CONFIG.LANGUAGE],
+                                 .cost = 5.0f,
+                                 .maintenance = 0.0f,
+                                 .construction_time = 30,
+                                 .effect =  taberna_effects,
+                                 .num_effects = sizeof(taberna_effects)};
+
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
   city_add_construction_project(city, aqueduct);
@@ -2479,7 +2512,7 @@ int main(void) {
   city_add_construction_project(city, port_ostia);
   city_add_construction_project(city, circus_maximus);
   city_add_construction_project(city, villa_publica);
-  city_add_construction_project(city, bakery);
+  city_add_construction_project(city, taberna);
   city_add_construction_project(city, bath);
 
   struct Effect pops_food_eating = {.duration = FOREVER};

@@ -25,6 +25,9 @@ const char *bakery_help_str[NUM_LANGUAGES] = {"Increase the amount of food produ
 const char *circus_maximus_help_str[NUM_LANGUAGES] = {""};
 const char *villa_publica_help_str[NUM_LANGUAGES] = {""};
 const char *bath_help_str[NUM_LANGUAGES] = {""};
+const char *taberna_help_strs[NUM_LANGUAGES] = {""};
+const char *taberna_bakery_help_strs[NUM_LANGUAGES] = {""};
+
 
 // ----- DESCRIPTION STRINGS -----
 // Description string are displayed where space is constrained and is a short
@@ -32,3 +35,4 @@ const char *bath_help_str[NUM_LANGUAGES] = {""};
 const char *bath_description_strs[NUM_LANGUAGES] = {
     "Roman bath complexes was a crucial part of life in the city"};
 const char *insula_description_strs[NUM_LANGUAGES] = {"Apartment block with space for 300 residents."};
+const char *taberna_description_strs[NUM_LANGUAGES] = {""};
