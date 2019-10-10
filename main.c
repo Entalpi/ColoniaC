@@ -185,7 +185,7 @@ static inline float uniform_random() { return rand() / RAND_MAX; }
 struct Date {
   uint32_t day;
   uint32_t month;
-  uint32_t year;
+  int32_t year; // Negative indicated BC and positive AD
 };
 
 // NOTE: Not historically correct in classic Latin times (Kal, a.d VI Non, etc)
@@ -352,7 +352,7 @@ static inline char *roman_numeral_new_str(const uint32_t n) {
 }
 
 static inline const char *get_month_str(const struct Date date) {
-  assert(date.month <= 11);
+  assert(date.month <= 11 && "Invalid date passed to get_month_str");
   static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
                                      "Aprilis",   "Maius",      "Iunius",
                                      "Iulius",    "Augustus",   "September",
@@ -361,10 +361,65 @@ static inline const char *get_month_str(const struct Date date) {
 }
 
 static inline uint32_t get_days_in_month(const struct Date date) {
-  assert(date.month <= 11);
+  assert(date.month <= 11 && "Invalid date passed to get_days_in_month");
   static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
                                         31, 31, 30, 31, 30, 31};
   return month_lngs[date.month];
+}
+
+// Callee-owned date string
+enum DateFormat { SHORT, MEDIUM, LONG };
+static char *get_new_date_str(const struct Date d) {
+  char *fmt_str = NULL;
+  if (d.year < 0) {
+    fmt_str = " %d BC";
+  } else {
+    fmt_str = " %d AD";
+  }
+
+  const int lng = snprintf(NULL, 0, fmt_str, abs(d.year)) + 1;
+  char *str = (char *)calloc(1, lng);
+  snprintf(str, lng, fmt_str, abs(d.year));
+  return str;
+  // TODO: Implement date string formats?
+  // Latin
+  // Year: "234 BC";
+  // Month: "Maius 234 BC"
+  // Day: "XXIII Maius 234 BC"
+  // Normal (language specific)
+  // Year: "234 BC"
+  // Month: "May 234 BC"
+  // Day: "23rd of May 234 BC"
+}
+
+/// Returns: -1 = a < b, 0 = a == b, 1 = a > b
+enum Comparison { LESS = -1, EQUAL = 0, GREATER = 1 };
+static enum Comparison compare_date(const struct Date a, const struct Date b) {
+  if (a.year < b.year) {
+    return LESS;
+  }
+
+  if (a.year > b.year) {
+    return GREATER;
+  }
+
+  if (a.year == b.year) {
+    if (a.month == b.month) {
+      if (a.day == b.day) {
+        return EQUAL;
+      }
+      if (a.day < b.day) {
+        return LESS;
+      }
+      return GREATER;
+    } else {
+      if (a.month < b.month) {
+        return LESS;
+      }
+      return GREATER;
+    }
+  }
+  assert(false && "Date comparison does not work.");
 }
 
 static inline void increment_date(struct Date *date) {
@@ -376,7 +431,11 @@ static inline void increment_date(struct Date *date) {
   }
 
   if (date->month == 12) {
-    date->year++;
+    if (date->year < 0) {
+      date->year++;
+    } else {
+      date->year--;
+    }
     date->month = 0;
   }
 }
@@ -452,7 +511,7 @@ const char *get_season_str(const struct Date *date) {
   case 12:
     return WINTER;
   }
-  assert(false);
+  assert(false && "Invalid date passed to get_season_str");
   return "";
 }
 
@@ -460,6 +519,7 @@ static inline bool is_winter(const struct Date *date) {
   return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
+// TODO: lut tables of strings ...
 enum CapacityType { Political = 0, Military = 1, Diplomatic = 2 };
 
 const char *lut_capacity_str(const enum CapacityType type) {
@@ -623,6 +683,8 @@ struct Construction {
   float cost;
   float maintenance;
   // NOTE: Effect.description_str provides gameplay information in short format
+  // If true, the Effect may only be built once and Effect is duration = FOREVER
+  bool unique_effects;
   struct Effect *effect;
   size_t num_effects;       // Construction variants
   size_t construction_time; // Time to build in timesteps (days)
@@ -874,6 +936,8 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   // Apply modifiers
   c1->food_production *= c1->food_production_modifier;
 
+  fprintf(stderr, "Food: %f \n", c1->food_production);
+
   // Compute changes during this timestep
   population_calculation(c, c1);
 
@@ -898,7 +962,6 @@ void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
       fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
   c1->food_production +=
       output_effectiveness * c->produce_values[arg->produce] * arg->area;
-
   c1->land_area_used += arg->area;
 }
 
@@ -1129,128 +1192,48 @@ bool city_enact_law(struct City *c, struct Law *l) {
   return true;
 }
 
-void build_construction(struct City *c, const struct Construction cp,
-                        const struct Effect activated_effect) {
-  struct Construction *construction = city_add_construction(c, cp);
-  construction->construction_in_progress = true;
-  construction->maintained = true;
-  construction->construction_cost =
-      construction->cost / construction->construction_time;
-  construction->effect = calloc(1, sizeof(struct Effect));
-  construction->construction_started = date;
-  // Linking the construction and its active effect
-  construction->effect[0] =
-      activated_effect; // TODO: Expand with more than one activated effect
-  construction->num_effects = 1;
+void build_construction(struct City *c, struct Construction *cp,
+                        const struct Effect *activated_effect) {
+  assert(cp);
+  assert(activated_effect);
 
-  eventlog_add_msgf(c->log, "Building of a %s started ..", cp.name_str);
+  struct Construction *con = city_add_construction(c, *cp);
+  assert(con);
+  con->name_str = activated_effect->name_str;
+  con->construction_in_progress = true;
+  con->maintained = true;
+  con->construction_cost = con->cost / con->construction_time;
+  con->effect = calloc(1, sizeof(struct Effect));
+  con->construction_started = date;
+  // Linking the construction and its active effect
+  con->effect[0] = *activated_effect;
+  con->num_effects = 1;
+
+  if (cp->unique_effects) {
+    const size_t i = (activated_effect - cp->effect) / sizeof(struct Effect);
+    cp->effect[i] = cp->effect[cp->num_effects - 1];
+    cp->num_effects--;
+  }
+
+  eventlog_add_msgf(c->log, "Building of %s started ..", con->name_str);
 
   int lng = snprintf(NULL, 0, "9999 days left, - %.2f / day",
-                     construction->construction_cost) +
+                     con->construction_cost) +
             1;
   char *description_str =
       (char *)calloc(lng, sizeof(char)); // Filled by the building_tick_effect
 
-  lng = snprintf(NULL, 0, "Building %s", cp.name_str) + 1;
+  lng = snprintf(NULL, 0, "Building %s", con->name_str) + 1;
   char *name_str = (char *)calloc(lng, sizeof(char));
-  snprintf(name_str, lng, "Building %s", cp.name_str);
+  snprintf(name_str, lng, "Building %s", con->name_str);
 
   struct Effect building_effect = {.name_str = name_str,
                                    .description_str = description_str,
-                                   .duration = cp.construction_time,
-                                   .arg = construction,
+                                   .duration = cp->construction_time,
+                                   .arg = con,
                                    .tick_effect = building_tick_effect};
   city_add_effect(c, building_effect);
 }
-
-void construction_menu(struct City *c) {
-  const int h = 4 + c->num_construction_projects;
-  const int w = 60;
-  WINDOW *win = create_newwin(h, w, LINES / 2 - h / 2, COLS / 2 - w / 2);
-  keypad(win, true); /* For keyboard arrows 	*/
-  mvwprintw(win, 1, 1, "[Q]");
-  const char *str = "Constructions";
-  mvwprintw(win, 1, w / 2 - strlen(str) / 2, str);
-
-  uint8_t hselector = 0;
-  uint8_t selector = 0;
-  bool done = false;
-  while (!done) {
-    uint32_t offset = 0;
-    uint32_t s = 2;
-
-    for (size_t i = 0; i < c->num_construction_projects; i++) {
-      if (i == selector) {
-        wattron(win, A_REVERSE);
-      }
-
-      if (i == selector && c->construction_projects[i].num_effects > 0) {
-        wmvclrprintw(win, s + i + offset, 1, "%s (%.1f gold)",
-                     c->construction_projects[i].effect[hselector].name_str,
-                     c->construction_projects[i].cost);
-
-        const uint8_t hinset = w - 7;
-        wmvprintw(win, s + i + offset, hinset, "%u / %u", hselector + 1,
-                  c->construction_projects[i].num_effects);
-      } else {
-        wmvclrprintw(win, s + i + offset, 1, "%s (%.1f gold)",
-                     c->construction_projects[i].effect[0].name_str,
-                     c->construction_projects[i].cost);
-      }
-
-      if (i == selector) {
-        wattroff(win, A_REVERSE);
-        offset = 1;
-        wmvclrprintw(win, s + i + offset, 1, " - %s",
-                     c->construction_projects[i].description_str);
-      }
-    }
-
-    switch (wgetch(win)) {
-    case C_KEY_DOWN:
-      hselector = 0;
-      if (selector >= c->num_construction_projects - 1) {
-        break;
-      }
-      selector++;
-      break;
-    case C_KEY_UP:
-      hselector = 0;
-      if (selector == 0) {
-        break;
-      }
-      selector--;
-      break;
-    case C_KEY_ENTER:
-      build_construction(
-          c, c->construction_projects[selector],
-          c->construction_projects[selector]
-              .effect[hselector %
-                      c->construction_projects[selector].num_effects]);
-      done = true;
-      wclear(root);
-      break;
-    case C_KEY_LEFT:
-      if (hselector == 0) {
-        break;
-      }
-      hselector--;
-      break;
-    case C_KEY_RIGHT:
-      if (hselector == c->construction_projects[selector].num_effects - 1) {
-        break;
-      }
-      hselector++;
-      break;
-    case 'q':
-      done = true;
-      break;
-    }
-  }
-  destroy_win(win);
-}
-
-// TODO: Implement a start menu or something similiar
 
 bool quit_menu(struct City *c) {
   // TODO: Export City state to JSON
@@ -1265,73 +1248,6 @@ void help_menu(struct City *c) {
   // TODO: Implement help menu
   // TODO: There should be a explain word/concept discovery functionality like
   // Emacs's explain-function
-}
-
-/// Display terminal-based user interface
-void update_tui(const struct City *c) {
-  assert(c);
-  int row = 0;
-  wmvclrprintw(root, row++, 0, "%s", c->name);
-
-  // TODO: Merge effects from constructions with effects
-  row += 1;
-  wmvclrprintw(root, row++, 0, "[1] EFFECTS [+]");
-  for (size_t i = 0; i < c->num_effects; i++) {
-    if (c->effects[i].name_str) {
-      wmvclrprintw(root, row++, 0, "%s: %s", c->effects[i].name_str,
-                   c->effects[i].description_str);
-    }
-  }
-
-  row += 1;
-  wmvclrprintw(root, row++, 0, "[2] CONSTRUCTIONS [+]");
-  for (size_t i = 0; i < c->num_constructions; i++) {
-    struct Construction *con = &c->constructions[i];
-    if (!con->construction_finished) {
-      continue;
-    }
-    if (con->maintained) {
-      wmvclrprintw(root, row++, 0, "%s: %s", con->effect[0].name_str,
-                   con->effect[0].description_str);
-    } else {
-      wmvclrprintw(root, row++, 0, "[UNMAINTAINED] %s: %s",
-                   con->effect[0].name_str, con->effect[0].description_str);
-    }
-  }
-
-  row += 1;
-  wmvclrprintw(root, row++, 0, "[3] RESOURCES [+]");
-  wmvclrprintw(root, row++, 0, "Gold (%'.2f): %.2f kg", c->gold_usage, c->gold);
-  wmvclrprintw(root, row++, 0, "Land: %u jugerum", c->land_area);
-  wmvclrprintw(root, row++, 0, "Food consumption: %'.1f kcal",
-               c->food_production - c->food_usage);
-  if (c->food_production - c->food_usage > 0.0f) {
-    wmvclrprint(root, row++, 0, "EXPORTING FOOD");
-  } else {
-    wmvclrprint(root, row++, 0, "IMPORTING FOOD");
-  }
-
-  row += 1;
-  wmvclrprintw(root, row++, 0, "Political  power: %u / %u", c->political_usage,
-               c->political_capacity);
-  wmvclrprintw(root, row++, 0, "Military   power: %u / %u", c->military_usage,
-               c->military_capacity);
-  wmvclrprintw(root, row++, 0, "Diplomatic power: %u / %u", c->diplomatic_usage,
-               c->diplomatic_capacity);
-
-  row += 1;
-  wmvclrprintw(root, row++, 0, "[4] DEMOGRAPHICS [+]");
-  wmvclrprintw(root, row++, 0, "Population: %'.0f", c->population);
-
-  // TODO: Implement controls and menu system
-  wmvclrprintw(
-      root, LINES - 1, 0,
-      "Speed: %u / 9 | Q: menu | C: construction | P: policy | H: help",
-      simulation_speed);
-  // TODO: Show drastically declining (good) numbers in reddish, yellowish for
-  // stable values, green for increasing (good) values and vice versa for bad
-  // values like deaths
-  // TODO: Show deltas for the month next to the current values
 }
 
 #ifdef USER_INTERFACE_GUI
@@ -1492,13 +1408,26 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
 
   const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE |
                              NK_WINDOW_CLOSABLE | NK_WINDOW_SCALABLE;
-  if (nk_begin(ctx, "Construction", nk_rect(200, 500, 650, 300), win_flags)) {
+
+  const uint32_t win_width = 650;
+  const uint32_t win_height = 300;
+  const struct nk_rect win_rect =
+      nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
+              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
+              win_width, win_height);
+  if (nk_begin(ctx, "Construction", win_rect, win_flags)) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Construction projects", NK_MAXIMIZED)) {
       for (size_t i = 0; i < c->num_construction_projects; i++) {
         const struct Construction *proj = &c->construction_projects[i];
+
+        if (proj->num_effects == 0) {
+          continue;
+        }
+
         static const float ratio[] = {0.25f, 0.05f, 0.35f, 0.15f, 0.05f, 0.15f};
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
 
+        // TODO: Last variant of buildings name will not be shown ...
         nk_label(ctx, proj->name_str,
                  NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
 
@@ -1518,7 +1447,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         // or started
         if (proj->num_effects == 1) {
           if (nk_button_label(ctx, "Build")) {
-            build_construction(c, *proj, proj->effect[0]);
+            build_construction(c, &c->construction_projects[i],
+                               &proj->effect[0]);
           }
         } else {
           // FIXME: GUI nk_menu_begin_label does not have the same background as
@@ -1542,7 +1472,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
                 if (nk_menu_item_label(ctx, proj->effect[j].name_str,
                                        NK_TEXT_ALIGN_CENTERED |
                                            NK_TEXT_ALIGN_MIDDLE)) {
-                  build_construction(c, *proj, proj->effect[j]);
+                  build_construction(c, &c->construction_projects[i],
+                                     &proj->effect[0]);
                 }
               }
               nk_menu_end(ctx);
@@ -1885,11 +1816,17 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
   const uint32_t win_width = 800;
   const uint32_t win_height = 500;
+
   const struct nk_rect win_rect =
       nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
               (CONFIG.RESOLUTION.height / 4.0f) - (win_height / 2.0f),
               win_width, win_height);
-  if (nk_begin(ctx, c->name, win_rect, main_win_flags)) {
+
+  char *date_str = get_new_date_str(date);
+  const char *win_title = str_concat_new(c->name, date_str);
+  free(date_str);
+
+  if (nk_begin(ctx, win_title, win_rect, main_win_flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     char *numeral_str = roman_numeral_new_str(date.day + 1);
     nk_labelf(ctx, NK_TEXT_ALIGN_CENTERED, "%s, day %s of %s, %s",
@@ -2093,6 +2030,24 @@ void parse_config_file() {
         CONFIG.RESOLUTION = res;
       }
 
+      struct cJSON *start_date = cJSON_GetObjectItem(json, "start_date");
+      if (cJSON_IsObject(start_date)) {
+        struct cJSON *year = cJSON_GetObjectItem(start_date, "year");
+        if (cJSON_IsNumber(year)) {
+          date.year = year->valueint;
+        }
+
+        struct cJSON *month = cJSON_GetObjectItem(start_date, "month");
+        if (cJSON_IsNumber(month)) {
+          date.month = month->valueint;
+        }
+
+        struct cJSON *day = cJSON_GetObjectItem(start_date, "day");
+        if (cJSON_IsNumber(day)) {
+          date.day = day->valueint;
+        }
+      }
+
       struct cJSON *fullscreen = cJSON_GetObjectItem(json, "fullscreen");
       if (cJSON_IsBool(fullscreen)) {
         CONFIG.FULLSCREEN = fullscreen->valueint;
@@ -2253,21 +2208,29 @@ int main(void) {
       .effect = &port_ostia_construction_effect,
       .num_effects = 1};
 
-  struct Effect aqueduct_construction_effect = {
-      .name_str = "Aqueduct",
-      .description_str = "Provides drinking water and bathing water",
+  struct Effect aqueduct_valens_construction_effect = {
+      .name_str = "Aqueduct of Valens",
       .duration = FOREVER,
       .tick_effect = aqueduct_tick_effect};
+
+  struct Effect aqueduct_appia_construction_effect = {
+      .name_str = "Aqueduct Appia",
+      .duration = FOREVER,
+      .tick_effect = aqueduct_tick_effect};
+
+  struct Effect aqueduct_construction_effects[2] = {
+      aqueduct_valens_construction_effect, aqueduct_appia_construction_effect};
 
   struct Construction aqueduct = {
       .name_str = "Aqueduct",
       .help_str = aqueduct_help_str[CONFIG.LANGUAGE],
-      .description_str = "Provides fresh water for the city.",
+      .description_str = aqueduct_description_strs[CONFIG.LANGUAGE],
       .cost = 25.0f,
       .maintenance = 0.2f,
       .construction_time = 6 * 30,
-      .effect = &aqueduct_construction_effect,
-      .num_effects = 1};
+      .unique_effects = true,
+      .effect = aqueduct_construction_effects,
+      .num_effects = 2};
 
   // TODO: Plot food production of the year (year report?)
   struct FarmArgument grape_farm_arg = {
@@ -2319,16 +2282,16 @@ int main(void) {
       .maintenance = 0.0f,
       .name_str = "Farm",
       .help_str = farm_help_str[CONFIG.LANGUAGE],
-      .description_str = "Piece of land producing various produce.",
+      .description_str = farm_description_strs[CONFIG.LANGUAGE],
+      .unique_effects = true,
       .effect = farm_construction_effects,
       .num_effects = 3,
       .gui_construction_management = gui_farm_construction_management};
 
-  struct Effect basilica_construction_effect = {
-      .name_str = "Basilica",
-      .description_str = "Public building ...",
-      .duration = FOREVER,
-      .tick_effect = basilica_tick_effect};
+  struct Effect basilica_construction_effect = {.name_str = "Basilica",
+                                                .duration = FOREVER,
+                                                .tick_effect =
+                                                    basilica_tick_effect};
 
   struct Construction basilica = {
       .cost = 15.0f,
@@ -2336,7 +2299,7 @@ int main(void) {
       .construction_time = 3 * 30,
       .name_str = "Basilica",
       .help_str = basilica_help_str[CONFIG.LANGUAGE],
-      .description_str = "Public building used official matters.",
+      .description_str = basilica_description_strs[CONFIG.LANGUAGE],
       .effect = &basilica_construction_effect,
       .num_effects = 1};
 
@@ -2344,28 +2307,27 @@ int main(void) {
 
   struct Effect forum_trajan_construction_effect = {
       .name_str = "Forum of Trajan",
-      .description_str = "Public space for commerce and public life.",
       .duration = FOREVER,
       .arg = &forum_trajan_arg,
       .tick_effect = forum_tick_effect};
 
   struct Effect forum_effects[] = {forum_trajan_construction_effect};
 
-  struct Construction forum = {.cost = 50.0f,
-                               .maintenance = 0.5f,
-                               .construction_time = 12 * 30,
-                               .name_str = "Forum",
-                               .help_str = forum_help_str[CONFIG.LANGUAGE],
-                               .description_str = "Public space for commerce.",
-                               .gui_construction_management =
-                                   gui_forum_construction_management,
-                               .effect = forum_effects,
-                               .num_effects = sizeof(forum_effects)};
+  struct Construction forum = {
+      .cost = 50.0f,
+      .maintenance = 0.5f,
+      .construction_time = 12 * 30,
+      .name_str = "Forum",
+      .help_str = forum_help_str[CONFIG.LANGUAGE],
+      .description_str = forum_description_strs[CONFIG.LANGUAGE],
+      .gui_construction_management = gui_forum_construction_management,
+      .unique_effects = true,
+      .effect = forum_effects,
+      .num_effects = 1};
 
   struct Effect coin_mint_construction_effect = {
       .name_str = "Coin mint",
-      .description_str =
-          "Produces coinage, ensures commerce is not disrupted by war.",
+      .description_str = coin_mint_description_strs[CONFIG.LANGUAGE],
       .duration = FOREVER,
       .tick_effect = coin_mint_tick_effect};
 
@@ -2401,30 +2363,31 @@ int main(void) {
                                      temple_of_mars_construction_effect,
                                      temple_of_vulcan_construction_effect};
 
-  struct Construction temple = {
-      .name_str = "Temple",
-      .description_str =
-          "Used in festivals & sacrifies and other Roman traditions",
-      .help_str = temple_help_str[CONFIG.LANGUAGE],
-      .cost = 25.0f,
-      .maintenance = 0.12f,
-      .construction_time = 5 * 30,
-      .effect = temple_effects,
-      .num_effects = 3};
+  struct Construction temple = {.name_str = "Temple",
+                                .description_str =
+                                    temple_description_strs[CONFIG.LANGUAGE],
+                                .help_str = temple_help_strs[CONFIG.LANGUAGE],
+                                .cost = 25.0f,
+                                .maintenance = 0.12f,
+                                .construction_time = 5 * 30,
+                                .unique_effects = true,
+                                .effect = temple_effects,
+                                .num_effects = 3};
 
   struct Effect senate_house_construction_effect = {
       .name_str = "Senate house",
-      .description_str = "Enables policies to be enacted",
+      .description_str = senate_house_description_strs[CONFIG.LANGUAGE],
       .duration = FOREVER,
       .tick_effect = senate_house_tick_effect};
 
   struct Construction senate_house = {
       .name_str = "Senate house",
       .help_str = senate_house_help_str[CONFIG.LANGUAGE],
-      .description_str = "Meeting place of the lawmaking part of the Republic",
+      .description_str = senate_house_description_strs[CONFIG.LANGUAGE],
       .cost = 50.0f,
       .maintenance = 0.05f,
       .construction_time = 3 * 30,
+      .unique_effects = true,
       .effect = &senate_house_construction_effect,
       .num_effects = 1};
 
@@ -2445,12 +2408,14 @@ int main(void) {
                                 .num_effects = 1};
 
   struct Effect villa_publica_construction_effect = {
-      .duration = FOREVER, .tick_effect = &villa_publica_tick_effect};
+      .name_str = "Villa Publica",
+      .duration = FOREVER,
+      .tick_effect = &villa_publica_tick_effect};
 
   struct Construction villa_publica = {
       .name_str = "Villa Publica",
       .help_str = villa_publica_help_str[CONFIG.LANGUAGE],
-      .description_str = "Censors base of operations during the Republic",
+      .description_str = villa_publica_description_strs[CONFIG.LANGUAGE],
       .cost = 50.0f,
       .maintenance = 0.25f,
       .construction_time = 60,
@@ -2458,12 +2423,14 @@ int main(void) {
       .num_effects = 1};
 
   struct Effect circus_maximus_construction_effect = {
-      .duration = FOREVER, .tick_effect = &circus_maximus_tick_effect};
+      .name_str = "Circus Maximus",
+      .duration = FOREVER,
+      .tick_effect = &circus_maximus_tick_effect};
 
   struct Construction circus_maximus = {
       .name_str = "Circus Maximus",
       .help_str = circus_maximus_help_str[CONFIG.LANGUAGE],
-      .description_str = "",
+      .description_str = circus_maximus_description_strs[CONFIG.LANGUAGE],
       .cost = 100.0f,
       .maintenance = 1.10f,
       .construction_time = 12 * 30,
@@ -2498,8 +2465,8 @@ int main(void) {
                                  .cost = 5.0f,
                                  .maintenance = 0.0f,
                                  .construction_time = 30,
-                                 .effect =  taberna_effects,
-                                 .num_effects = sizeof(taberna_effects)};
+                                 .effect = taberna_effects,
+                                 .num_effects = 1};
 
   city_add_construction_project(city, insula);
   city_add_construction_project(city, senate_house);
@@ -2557,6 +2524,7 @@ int main(void) {
   city_add_law(city, land_tax);
 
   bool quit = false;
+  bool pause = false; // Pauses simulation when window goes inactive
 
   struct timeval t0;
   struct timeval t1;
@@ -2568,13 +2536,17 @@ int main(void) {
     uint64_t dt = ((t1.tv_sec * 1000) + (t1.tv_usec / 1000)) -
                   ((t0.tv_sec * 1000) + (t0.tv_usec / 1000));
 
-    const uint32_t ms_per_timestep = ms_per_timestep_for(simulation_speed);
-    if (dt >= ms_per_timestep && ms_per_timestep != 0) {
-      struct City *c = &cities[cidx];
-      struct City *c1 = &cities[(cidx + 1) % 2];
-      simulate_next_timestep(c, c1);
-      cidx = (cidx + 1) % 2;
-      t0 = t1;
+    if (!pause) {
+      const uint32_t ms_per_timestep = ms_per_timestep_for(simulation_speed);
+      if (dt >= ms_per_timestep && ms_per_timestep != 0) {
+        struct City *c = &cities[cidx];
+        struct City *c1 = &cities[(cidx + 1) % 2];
+        simulate_next_timestep(c, c1);
+        cidx = (cidx + 1) % 2;
+        t0 = t1;
+      }
+    } else {
+      SDL_Delay(1000);
     }
 
 #ifdef USER_INTERFACE_GUI
@@ -2584,6 +2556,16 @@ int main(void) {
     while (SDL_PollEvent(&evt)) {
       if (evt.type == SDL_QUIT) {
         return 0;
+      }
+      if (evt.type == SDL_WINDOWEVENT) {
+        switch (evt.window.event) {
+        case SDL_WINDOWEVENT_FOCUS_LOST:
+          pause = true;
+          break;
+        case SDL_WINDOWEVENT_FOCUS_GAINED:
+          pause = false;
+          break;
+        }
       }
       if (evt.type == SDL_KEYDOWN) {
         switch (evt.key.keysym.sym) {

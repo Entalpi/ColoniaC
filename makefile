@@ -1,8 +1,8 @@
 CC = gcc
 
 CFLAGS = -std=c11 -Wall -pedantic
-# CFLAGS += -g # Portable debugging
-CFLAGS += -ggdb3 -gstabs+ # More debug info for GDB by GCC
+CFLAGS += -g # Portable debugging
+# CFLAGS += -ggdb3 -gstabs+ # More debug info for GDB by GCC
 
 LIBS = -lm -lncurses -lGLEW -lSDL2
 
