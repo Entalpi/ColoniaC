@@ -2105,7 +2105,7 @@ int main(void) {
     win_flags |= SDL_WINDOW_FULLSCREEN;
   }
   SDL_Window *sdl_window = SDL_CreateWindow(
-      "ColoniaC", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+      "Rome: Total Simulation", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       CONFIG.RESOLUTION.width, CONFIG.RESOLUTION.height, win_flags);
   SDL_GL_CreateContext(sdl_window);
 

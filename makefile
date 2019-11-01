@@ -18,4 +18,4 @@ else
 endif
 
 default:
-	$(CC) $(CFLAGS) -o colonia cJSON.c main.c $(LIBS)
+	$(CC) $(CFLAGS) -o rome-total-simulation include/cJSON.c main.c $(LIBS)
