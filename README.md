@@ -1,27 +1,46 @@
-# ColoniaC
+# Rome: Total Simulation
 ![](https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Vexilloid_of_the_Roman_Empire.svg/490px-Vexilloid_of_the_Roman_Empire.svg.png)
 
+In Rome: Total Simulation your goal is to ensure that *voice of
+Palpatine* the Republic (of Rome) survives the struggle between the patricians
+and plebians known as the conflict of the orders. The game takes place from 350
+BC to around 0 AD.
 
-The Roman Empire is expanding rapidly. Outposts are coming up faster than ever before but they are under pressure from all sides. Protect your citizens from barbarians, build aqueducts, launch counterattacks across the border, obey your Caesar's commands.
+How you go about this is by balancing the needs of the aristocracy and the
+masses by commissioning construction projects, enact laws that affect the life
+of all Romans and last but not least wage war against non-Romans (and
+occasionally put down a slave revolt or two). 
 
-Extend the reach of civilization from the comfort of your terminal.
+The main ways to do all this is to ensure that the gold keeps flowing towards
+Rome and that the food and water supply is safe. 
 
-Will you rise to the purple?
+This project was born out of a love of Roman history and the lack of deep and
+fun historical simulators that did not skimp on the details.
+
+It is written in C because one mans pain is another mans fun as the famous
+goes. The user interface is either a actually working GUI version or the now
+seriously-in-need-of-a-update terminal user inteface (TUI). 
+
+The core philosophy regarding the gameplay is that spending in-game resources
+should feel impactful and that one should actually learn something regarding
+Roman history simply by playing the game. 
+
+For more information please see the documentation in the /docs folder.
 
 # FAQ
 ## What's up with the name?
-[See here](https://en.wikipedia.org/wiki/Colonia).
-Okay, but what is up with the 'C' at the end then?
-This is to signify that this game is written in the C-programming language. 
+Rome: Total Simulation (RTS) is mostly a joke on Rome: Total War. The acronym is also pretty funny.
 
-## HOW DO I PLAY IT?!?! 
-1. 'git clone https://github.com/Entalpi/ColoniaC'
+## How to play
+More information in the /docs.
+
+1. 'git clone https://github.com/Entalpi/Rome-Total-Simulation'
 2. 'make'
-3. './colonia'
+3. './rome-total-simulation'
 4. Read the tutorial and enjoy.
 
 # License
-Copyright (c) Alexander Lingtorp
+Copyright (c) 2019, Alexander Lingtorp
 MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
