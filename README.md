@@ -28,10 +28,13 @@ Roman history simply by playing the game.
 For more information please see the documentation in the /docs folder.
 
 # FAQ
+## Documentation?
+Please see the actual documentation in the /docs folder.
+
 ## What's up with the name?
 Rome: Total Simulation (RTS) is mostly a joke on Rome: Total War. The acronym is also pretty funny.
 
-## How to play
+## How to play?
 More information in the /docs.
 
 1. 'git clone https://github.com/Entalpi/Rome-Total-Simulation'
