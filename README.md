@@ -17,7 +17,7 @@ Rome and that the food and water supply is safe.
 This project was born out of a love of Roman history and the lack of deep and
 fun historical simulators that did not skimp on the details.
 
-It is written in C because one mans pain is another mans fun as the famous goes.
+It is written in C because one mans pain is another mans fun as the famous saying goes.
 The user interface is either a actually working GUI version or the now
 seriously-in-need-of-a-update terminal user inteface (TUI).
 
