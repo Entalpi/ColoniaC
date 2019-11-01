@@ -46,17 +46,18 @@ static WINDOW *root = NULL; // ncurses root window
 #define NK_SDL_GL3_IMPLEMENTATION
 #define NK_KEYSTATE_BASED_INPUT
 
-#include "nuklear.h"
-#include "nuklear_sdl_gl3.h"
+#include "include/nuklear.h"
+#include "include/nuklear_sdl_gl3.h"
+#include "style.h"
 
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "include/stb_image.h"
 #endif
 
-#include "cJSON.h"
+#include "include/cJSON.h"
 
 #define NK_TOOLTIP(ctx, code, str)                                             \
   {                                                                            \
@@ -76,8 +77,14 @@ struct Resolution {
 /// NOTE: Forward declarations basically
 struct City;
 
+// NOTE: Please see the documentation
+enum DIFFICULTY {
+  DIFFICULTY_EASY = 0,
+  DIFFICULTY_MEDIUM = 1,
+  DIFFICULTY_HARD = 3
+};
+
 /// Game configuration initialized once at startup
-// NOTE: Please see documentation for explainations
 static struct {
   char *FILEPATH_ROOT;
   char *FILEPATH_RSRC;
@@ -87,6 +94,7 @@ static struct {
   bool FULLSCREEN;
   int LANGUAGE;
   struct Resolution RESOLUTION;
+  enum DIFFICULTY DIFFICULTY;
 } CONFIG;
 
 // Language definitions
@@ -103,7 +111,7 @@ char *str_concat_new(const char *lhs, const char *rhs) {
   }
   const size_t lhs_lng = strlen(lhs);
   const size_t rhs_lng = strlen(rhs);
-  const size_t new_lng = lhs_lng + rhs_lng;
+  const size_t new_lng = lhs_lng + rhs_lng + 1;
   char *new_str = (char *)calloc(new_lng, sizeof(char));
   strncpy(new_str, lhs, lhs_lng);
   strncpy(&new_str[lhs_lng], rhs, rhs_lng);
@@ -368,13 +376,23 @@ static inline uint32_t get_days_in_month(const struct Date date) {
 }
 
 // Callee-owned date string
-enum DateFormat { SHORT, MEDIUM, LONG };
-static char *get_new_date_str(const struct Date d) {
+enum DateFormat { DATE_FORMAT_SHORT, DATE_FORMAT_MEDIUM, DATE_FORMAT_LONG };
+static char *get_new_date_str(const struct Date d, const enum DateFormat fmt) {
   char *fmt_str = NULL;
   if (d.year < 0) {
     fmt_str = " %d BC";
   } else {
     fmt_str = " %d AD";
+  }
+
+  // TODO: Implement date formats
+  switch (fmt) {
+  case DATE_FORMAT_SHORT:
+    break;
+  case DATE_FORMAT_MEDIUM:
+    break;
+  case DATE_FORMAT_LONG:
+    break;
   }
 
   const int lng = snprintf(NULL, 0, fmt_str, abs(d.year)) + 1;
@@ -695,6 +713,11 @@ struct Construction {
                                       struct Construction *con, struct City *c);
 };
 
+// TODO: Documentate
+struct {
+  float max_population_reached;
+} Gamestate;
+
 struct City {
   char *name;
   struct EventLog *log;
@@ -935,8 +958,6 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
 
   // Apply modifiers
   c1->food_production *= c1->food_production_modifier;
-
-  fprintf(stderr, "Food: %f \n", c1->food_production);
 
   // Compute changes during this timestep
   population_calculation(c, c1);
@@ -1811,31 +1832,30 @@ void update_gui(struct City *c, struct nk_context *ctx) {
   static bool open_political_window = false;
 
   // Main window
-  const nk_flags main_win_flags =
-      NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE | NK_WINDOW_MOVABLE;
+  const nk_flags main_win_flags = NK_WINDOW_BORDER | NK_WINDOW_MINIMIZABLE;
 
-  const uint32_t win_width = 800;
-  const uint32_t win_height = 500;
+  const uint32_t win_width = CONFIG.RESOLUTION.width;
+  const uint32_t win_height = CONFIG.RESOLUTION.height;
 
   const struct nk_rect win_rect =
       nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
-              (CONFIG.RESOLUTION.height / 4.0f) - (win_height / 2.0f),
+              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
               win_width, win_height);
 
-  char *date_str = get_new_date_str(date);
+  char *date_str = get_new_date_str(date, DATE_FORMAT_SHORT);
   const char *win_title = str_concat_new(c->name, date_str);
   free(date_str);
 
   if (nk_begin(ctx, win_title, win_rect, main_win_flags)) {
     nk_layout_row_dynamic(ctx, 0.0f, 1);
     char *numeral_str = roman_numeral_new_str(date.day + 1);
-    nk_labelf(ctx, NK_TEXT_ALIGN_CENTERED, "%s, day %s of %s, %s",
+    nk_labelf(ctx, NK_TEXT_ALIGN_CENTERED, "The %s, day %s of %s, %s",
               get_year_str(&date), numeral_str, get_month_str(date),
               get_season_str(&date));
     free(numeral_str);
 
     // Capacities
-    nk_layout_row_dynamic(ctx, 30.0f, 3);
+    nk_layout_row_dynamic(ctx, 55.0f, 3);
     nk_label(ctx, "Military", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
     nk_label(ctx, "Political", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
     nk_label(ctx, "Diplomatic", NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_BOTTOM);
@@ -1846,9 +1866,11 @@ void update_gui(struct City *c, struct nk_context *ctx) {
 
     nk_layout_row_dynamic(ctx, GUI.icon_size.x + 10.0f, 1);
     if (nk_group_begin(ctx, "gui_main_windows", NK_WINDOW_NO_SCROLLBAR)) {
-      nk_layout_row_static(ctx, GUI.icon_size.x, GUI.icon_size.y, 13);
+      nk_layout_row_static(ctx, GUI.icon_size.x, GUI.icon_size.y, 17);
 
       {
+        nk_spacing(ctx, 2);
+
         NK_TOOLTIP(
             ctx,
             if (nk_button_image(ctx, GUI.military_icon)) {
@@ -1891,14 +1913,15 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       }
 
       nk_spacing(ctx, 1);
-      if (nk_button_label(ctx, "Event log")) {
+      if (nk_button_label(ctx, "Log")) {
         open_event_log_window = !open_event_log_window;
       }
 
       nk_spacing(ctx, 1);
-      if (nk_button_label(ctx, "Help")) {
+      if (nk_button_label(ctx, "?")) {
         open_help_window = !open_help_window;
       }
+      nk_spacing(ctx, 2);
 
       nk_group_end(ctx);
     }
@@ -2076,12 +2099,33 @@ enum GameState {
 
 enum GameState check_gamestate(const struct City *c) {
   // TODO: Implement all the game states
-  if (c->gold <= 0.0f) {
-    return BANKRUPT;
+
+  float population_factor = 0.0f;
+  int32_t gold_bottom_limit = 0;
+
+  switch (CONFIG.DIFFICULTY) {
+  case DIFFICULTY_EASY:
+    gold_bottom_limit = INT32_MIN;
+    break;
+  case DIFFICULTY_MEDIUM:
+    gold_bottom_limit = -100;
+    population_factor = 0.10f;
+    break;
+  case DIFFICULTY_HARD:
+    gold_bottom_limit = 0;
+    population_factor = 0.25f;
+    break;
   }
-  if (c->population <= 0) {
-    return IRRELEVANCE;
+
+  if (c->population <= population_factor * Gamestate.max_population_reached) {
+    return IRRELEVANCE; // The population has turned against the Senate ..
   }
+
+  if (c->gold <= gold_bottom_limit) {
+    return BANKRUPT; // The gold has stopped flowing towards Rome ..
+  }
+
+  // Everything is fine and the Republic survives .. for now
   return REPUBLIC;
 }
 
@@ -2119,12 +2163,13 @@ int main(void) {
 
   // Init Nuklear - GUI
   struct nk_context *ctx = nk_sdl_init(sdl_window);
+  set_style(ctx);
 
   const bool USE_CUSTOM_FONT = true;
   if (USE_CUSTOM_FONT) {
     struct nk_font_atlas *atlas;
     nk_sdl_font_stash_begin(&atlas);
-    const float FONT_HEIGHT = 15.0f;
+    const float FONT_HEIGHT = 25.0f;
     const char *font_name = "fonts/CONSTANTINE/Constantine.ttf";
     const char *font_filepath = str_concat_new(CONFIG.FILEPATH_RSRC, font_name);
     struct nk_font *font =
