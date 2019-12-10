@@ -1,5 +1,5 @@
 # Rome : Total Simulation
-![SPQR](https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Vexilloid_of_the_Roman_Empire.svg/490px-Vexilloid_of_the_Roman_Empire.svg.png)
+![](https://raw.githubusercontent.com/Entalpi/Rome-Total-Simulation/master/resources/screenshots/rts-screenshot.png)
 
 In Rome: Total Simulation your goal is to ensure that *voice of Palpatine* the
 Republic (of Rome) survives the struggle between the patricians and plebians
