@@ -1353,8 +1353,8 @@ void gui_forum_construction_management(struct nk_context *ctx,
   assert(arg);
 
   nk_layout_row_dynamic(ctx, 0.0f, 1);
-  nk_labelf(ctx, "Taberna spots: %u / %u", arg->num_taberna,
-            arg->taberna_capacity);
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Taberna spots: %zu / %zu",
+            arg->num_taberna, arg->taberna_capacity);
 }
 
 void gui_construction_detail_menu(struct Construction *con,
@@ -1430,8 +1430,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
   const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_MINIMIZABLE |
                              NK_WINDOW_CLOSABLE | NK_WINDOW_SCALABLE;
 
-  const uint32_t win_width = 650;
-  const uint32_t win_height = 300;
+  const uint32_t win_width = 900;
+  const uint32_t win_height = 500;
   const struct nk_rect win_rect =
       nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
               (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
@@ -1445,62 +1445,61 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
           continue;
         }
 
-        static const float ratio[] = {0.25f, 0.05f, 0.35f, 0.15f, 0.05f, 0.15f};
-        nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
-
-        // TODO: Last variant of buildings name will not be shown ...
-        nk_label(ctx, proj->name_str,
-                 NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
-
-        if (nk_button_label(ctx, "?")) {
-          open_construction_help_menu = !open_construction_help_menu;
-          help_menu_proj = proj;
-        }
-
-        nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%.2f gold",
-                  proj->cost);
-        nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days",
-                  proj->construction_time);
-
-        nk_spacing(ctx, 1);
-
         // TODO: Add visual indication or smt to show that building failed
         // or started
+        static const float ratio[] = {0.05f, 0.35f, 0.25f,
+                                      0.15f, 0.05f, 0.125f};
         if (proj->num_effects == 1) {
+          nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
+
+          if (nk_button_label(ctx, "?")) {
+            open_construction_help_menu = !open_construction_help_menu;
+            help_menu_proj = proj;
+          }
+
+          // TODO: Last variant of buildings name will not be shown ...
+          nk_label(ctx, proj->name_str,
+                   NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+
+          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                    "%.2f gold", proj->cost);
+          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days",
+                    proj->construction_time);
+
+          nk_spacing(ctx, 1);
+
+          // TODO: Positive colored buttons that are actionable
           if (nk_button_label(ctx, "Build")) {
             build_construction(c, &c->construction_projects[i],
                                &proj->effect[0]);
           }
         } else {
-          // FIXME: GUI nk_menu_begin_label does not have the same background as
-          // nk_label, whats up with that?
-          // FIXME: nk_menu_begin_label is confused by lack of ID to seperate
-          // multiple instance of the widget
-          const int lng = snprintf(NULL, 0, "construction_menu_grp_%lu", i) + 1;
-          char grp_id[lng];
-          snprintf(grp_id, lng, "construction_menu_grp_%lu", i);
-          if (nk_group_begin(ctx, grp_id,
-                             NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
-            nk_layout_row_dynamic(ctx, 0.0f, 1);
+          if (nk_tree_push(ctx, NK_TREE_NODE, proj->name_str, NK_MINIMIZED)) {
+            for (size_t j = 0; j < proj->num_effects; j++) {
 
-            const struct nk_vec2 menu_size =
-                nk_vec2(200, 100 * proj->num_effects);
+              nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
 
-            if (nk_menu_begin_label(ctx, "Build", NK_TEXT_ALIGN_CENTERED,
-                                    menu_size)) {
-              nk_layout_row_dynamic(ctx, 0.0f, 1);
-              for (size_t j = 0; j < proj->num_effects; j++) {
-                if (nk_menu_item_label(ctx, proj->effect[j].name_str,
-                                       NK_TEXT_ALIGN_CENTERED |
-                                           NK_TEXT_ALIGN_MIDDLE)) {
-                  build_construction(c, &c->construction_projects[i],
-                                     &proj->effect[0]);
-                }
+              if (nk_button_label(ctx, "?")) {
+                open_construction_help_menu = !open_construction_help_menu;
+                help_menu_proj = proj;
               }
-              nk_menu_end(ctx);
-            }
 
-            nk_group_end(ctx);
+              nk_label(ctx, proj->effect[j].name_str,
+                       NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+
+              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                        "%.2f gold", proj->cost);
+              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
+                        "%ld days", proj->construction_time);
+
+              nk_spacing(ctx, 1);
+
+              if (nk_button_label(ctx, "Build")) {
+                build_construction(c, &c->construction_projects[i],
+                                   &proj->effect[j]);
+              }
+            }
+            nk_tree_pop(ctx);
           }
         }
       }
@@ -1620,7 +1619,8 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
             nk_label_wrap(ctx, law->description_str);
             if (nk_button_label(ctx, "Enact")) {
-              // TODO: Implement positive/negative feedback based success or not
+              // TODO: Implement positive/negative feedback based success or
+              // not
               city_enact_law(c, law);
             }
             nk_tree_pop(ctx);
@@ -1961,7 +1961,7 @@ void update_gui(struct City *c, struct nk_context *ctx) {
       float ratio[] = {0.05f, 0.90f, 0.05f};
       nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
       nk_label(ctx, "0", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
-      nk_slider_int(ctx, 0, (int *)&simulation_speed, 11, 1);
+      nk_slider_int(ctx, 0, (int *)&simulation_speed, 9, 1);
       nk_label(ctx, "1", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
       nk_tree_pop(ctx);
     }
@@ -2671,21 +2671,6 @@ int main(void) {
 
     // TODO: Handle end of game states
     enum GameState game_state = check_gamestate(&cities[cidx]);
-    switch (game_state) {
-    case BANKRUPT:
-      // TODO:
-      break;
-    case RISE_OF_THE_EMPIRE:
-      // TODO:
-      break;
-    case BARBARIANS_TAKEOVER:
-      // TODO:
-      break;
-    case REPUBLIC:
-      break;
-    default:
-      assert(false && "Invalid game state reached");
-    }
 #endif
 
 #ifdef USER_INTERFACE_TERMINAL
