@@ -600,12 +600,12 @@ struct FarmArgument {
   const float p1;
 };
 
+enum { MAGISTRATES_AEDILE = 0x1, MAGISTRATES_CENSOR = 0x2 };
 struct CursusHonorum {
+  size_t magistrates_enabled;
   bool aedile_enabled;
-  struct Construction *aedile_assigned_construction;
-
   bool censor_enabled;
-  bool governor_enabled;
+  struct Construction *aedile_assigned_construction;
 };
 
 // Roman Lex (pl. leges)
@@ -639,13 +639,13 @@ struct Construction {
   // If true, the Effect may only be built once and Effect is duration = FOREVER
   bool unique_effects;
   struct Effect *effect;
-  size_t num_effects;       // Construction variants
-  size_t construction_time; // Time to build in timesteps (days)
+  size_t num_effects;          // Construction variants available to build now
+  size_t num_effects_capacity; // Number of construction variants from the start (IMMUTABLE)
+  size_t construction_time;    // Time to build in timesteps (days)
   struct Date construction_started;
   struct Date construction_completed;
   // Callback to the management pane of the construction
-  void (*gui_construction_management)(struct nk_context *ctx,
-                                      struct Construction *con, struct City *c);
+  void (*gui_construction_management)(struct nk_context *ctx, struct Construction *con, struct City *c);
 };
 
 // TODO: Documentate
@@ -721,19 +721,16 @@ struct Popup {
   uint32_t num_choices;
   char **choices;
   char **hover_txts; // Description text for the choices when hovering over them
-  void (*callback)(const struct Popup *p, const struct City *c,
-                   struct City *c1);
+  void (*callback)(const struct Popup *p, const struct City *c, struct City *c1);
   // NOTE: -1 = not handled by user, >= 0 callback executed in simulate_timestep
-  int32_t choice_choosen; // Set by the popup handling mechanic and processed
-                          // by the callback
+  int32_t choice_choosen; // Set by the popup handling mechanic and processed by the callback
 };
 
 /// NOTE: All city_add_* functions returns a ptr to the last element added
 struct Popup *city_add_popup(struct City *c, const struct Popup p) {
   if (c->num_popups + 1 > c->num_popups_capacity) {
-    c->num_popups_capacity += 10;
-    c->popups =
-        realloc(c->popups, sizeof(struct Popup) * c->num_popups_capacity);
+    c->num_popups_capacity += 100; // FIXME: Realloc will invalidate ptrs
+    c->popups = realloc(c->popups, sizeof(struct Popup) * c->num_popups_capacity);
   }
   c->popups[c->num_popups++] = p;
   return &c->popups[c->num_popups - 1];
@@ -741,34 +738,28 @@ struct Popup *city_add_popup(struct City *c, const struct Popup p) {
 
 struct Effect *city_add_effect(struct City *c, const struct Effect e) {
   if (c->num_effects + 1 > c->num_effects_capacity) {
-    c->num_effects_capacity += 10;
-    c->effects =
-        realloc(c->effects, sizeof(struct Effect) * c->num_effects_capacity);
+    c->num_effects_capacity += 100;
+    c->effects = realloc(c->effects, sizeof(struct Effect) * c->num_effects_capacity);
   }
   c->effects[c->num_effects++] = e;
   return &c->effects[c->num_effects - 1];
 }
 
-struct Construction *city_add_construction(struct City *c,
-                                           const struct Construction con) {
+struct Construction *city_add_construction(struct City *c, const struct Construction con) {
   if (c->num_constructions + 1 > c->num_constructions_capacity) {
-    c->num_constructions_capacity += 10;
-    c->constructions =
-        realloc(c->constructions,
-                sizeof(struct Construction) * c->num_constructions_capacity);
+    c->num_constructions_capacity += 100;
+    c->constructions = realloc(c->constructions, sizeof(struct Construction) * c->num_constructions_capacity);
   }
   c->constructions[c->num_constructions++] = con;
   return &c->constructions[c->num_constructions - 1];
 }
 
-struct Construction *
-city_add_construction_project(struct City *c, const struct Construction con) {
-  if (c->num_construction_projects + 1 >
-      c->num_construction_projects_capacity) {
-    c->num_construction_projects_capacity += 10;
-    c->construction_projects = realloc(
-        c->construction_projects,
-        sizeof(struct Construction) * c->num_construction_projects_capacity);
+struct Construction *city_add_construction_project(struct City *c, struct Construction con) {
+  con.num_effects_capacity = con.num_effects; // NOTE: Set initial number of effect available
+
+  if (c->num_construction_projects + 1 > c->num_construction_projects_capacity) {
+    c->num_construction_projects_capacity += 100;
+    c->construction_projects = realloc( c->construction_projects, sizeof(struct Construction) * c->num_construction_projects_capacity);
   }
   c->construction_projects[c->num_construction_projects++] = con;
   return &c->construction_projects[c->num_construction_projects - 1];
@@ -776,7 +767,7 @@ city_add_construction_project(struct City *c, const struct Construction con) {
 
 struct Law *city_add_law(struct City *c, const struct Law l) {
   if (c->num_available_laws + 1 > c->num_available_laws_capacity) {
-    c->num_available_laws_capacity += 10;
+    c->num_available_laws_capacity += 100;
     c->available_laws = realloc(c->available_laws, sizeof(struct Law) * c->num_available_laws_capacity);
   }
   c->available_laws[c->num_available_laws++] = l;
@@ -1150,8 +1141,7 @@ bool city_enact_law(struct City *c, struct Law *l) {
   l->date_passed = date;
   l->passed = true;
 
-  struct Effect enact_law_effect = {
-      .duration = l->cost_lng, .arg = l, .tick_effect = enact_law_tick_effect};
+  struct Effect enact_law_effect = {.duration = l->cost_lng, .arg = l, .tick_effect = enact_law_tick_effect};
   city_add_effect(c, enact_law_effect);
 
   city_add_effect(c, *l->effect);
@@ -1161,8 +1151,7 @@ bool city_enact_law(struct City *c, struct Law *l) {
 
 void build_construction(struct City *c, struct Construction *cp,
                         const struct Effect *activated_effect) {
-  assert(cp);
-  assert(activated_effect);
+  assert(cp); assert(activated_effect);
 
   struct Construction *con = city_add_construction(c, *cp);
   assert(con);
@@ -1236,25 +1225,23 @@ void glfw_error_callback(int e, const char *d) {
 }
 
 struct nk_image nk_image_load(const char *filename) {
-  int x, y, n;
-  GLuint tex;
+  int x = 0, y = 0, n = 0;
+  GLuint tex = 0;
   unsigned char *data = stbi_load(filename, &x, &y, &n, 0);
   if (!data) {
     fprintf(stderr, "[stbi]: failed to load image: %s", filename);
+  } else {
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(data);
   }
-
-  glGenTextures(1, &tex);
-  glBindTexture(GL_TEXTURE_2D, tex);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                  GL_LINEAR_MIPMAP_NEAREST);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-                  GL_LINEAR_MIPMAP_NEAREST);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-               data);
-  glGenerateMipmap(GL_TEXTURE_2D);
-  stbi_image_free(data);
+  assert(tex);
   return nk_image_id((int)tex);
 }
 
@@ -1390,7 +1377,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
 
         // TODO: Add visual indication or smt to show that building failed or started
         static const float ratio[] = {0.05f, 0.35f, 0.25f, 0.15f, 0.05f, 0.125f};
-        if (proj->num_effects == 1) {
+        if (proj->num_effects_capacity == 1) {
           nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
 
           if (nk_button_label(ctx, "?")) {
@@ -1681,11 +1668,8 @@ void gui_ingame_menu(struct City *c, struct nk_context *ctx) {
 
 // ----------- Custom GUI widgets  -----------
 
-void gui_building_row(struct City *c, struct nk_context *ctx,
-                      struct Effect *e) {
-  assert(c);
-  assert(e);
-  assert(e->arg);
+void gui_building_row(struct City *c, struct nk_context *ctx, struct Effect *e) {
+  assert(c); assert(e); assert(e->arg);
 
   struct Construction *arg = (struct Construction *)e->arg;
 
@@ -1696,8 +1680,7 @@ void gui_building_row(struct City *c, struct nk_context *ctx,
     e->scheduled_for_removal = true;
   }
 
-  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "Building %s",
-            arg->name_str);
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "Building %s", arg->name_str);
 
   if (arg->construction_in_progress) {
     if (nk_button_label(ctx, "||")) {
@@ -1712,8 +1695,7 @@ void gui_building_row(struct City *c, struct nk_context *ctx,
   size_t time_left = arg->construction_time - e->duration;
   nk_progress(ctx, &time_left, arg->construction_time, nk_false);
 
-  const float curr =
-      100.0f * (1.0f - ((float)e->duration / (float)arg->construction_time));
+  const float curr = 100.0f * (1.0f - ((float)e->duration / (float)arg->construction_time));
   nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "%.1f %%", curr);
 }
 
