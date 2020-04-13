@@ -800,7 +800,7 @@ void population_calculation(const struct City *c, struct City *c1) {
       avg_food_price += c->produce_values[i];
     }
     avg_food_price /= NUMBER_OF_PRODUCE;
-    c1->gold += avg_food_price * (c->food_production - c->food_usage);
+    c1->gold_usage += avg_food_price * (c->food_production - c->food_usage);
   }
 
   // Gold-food-population cycle
@@ -1411,7 +1411,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
             build_construction(c, &c->construction_projects[i], &proj->effect[0]);
           }
         } else {
-          if (nk_tree_push(ctx, NK_TREE_NODE, proj->name_str, NK_MINIMIZED)) {
+          if (nk_tree_push_id(ctx, NK_TREE_NODE, proj->name_str, NK_MINIMIZED, i)) {
             for (size_t j = 0; j < proj->num_effects; j++) {
 
               nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
@@ -1551,8 +1551,7 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
             nk_label_wrap(ctx, law->description_str);
             if (nk_button_label(ctx, "Enact")) {
-              // TODO: Implement positive/negative feedback based success or
-              // not
+              // TODO: Implement positive/negative feedback based success or not
               city_enact_law(c, law);
             }
             nk_tree_pop(ctx);
@@ -1567,26 +1566,19 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Cursus Honorum", NK_MAXIMIZED)) {
       if (c->cursus_honorum->aedile_enabled) {
         if (c->cursus_honorum->aedile_assigned_construction) {
-          nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Aedile assigned to %s",
-                    c->cursus_honorum->aedile_assigned_construction->name_str);
+          nk_labelf(ctx, NK_TEXT_ALIGN_LEFT, "Aedile assigned to %s", c->cursus_honorum->aedile_assigned_construction->name_str);
         } else {
-          if (nk_group_begin(ctx, "assign_aedile",
-                             NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
+          if (nk_group_begin(ctx, "assign_aedile", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
             nk_layout_row_dynamic(ctx, 0.0f, 1);
 
-            const struct nk_vec2 menu_size =
-                nk_vec2(200, 100 * c->num_constructions);
+            const struct nk_vec2 menu_size = nk_vec2(200, 100 * c->num_constructions);
 
             const char *ui_str = "Assign Aedile to ...";
-            if (nk_menu_begin_label(ctx, ui_str, NK_TEXT_ALIGN_CENTERED,
-                                    menu_size)) {
+            if (nk_menu_begin_label(ctx, ui_str, NK_TEXT_ALIGN_CENTERED, menu_size)) {
               nk_layout_row_dynamic(ctx, 0.0f, 1);
               for (size_t i = 0; i < c->num_constructions; i++) {
-                if (nk_menu_item_label(ctx, c->constructions[i].name_str,
-                                       NK_TEXT_ALIGN_CENTERED |
-                                           NK_TEXT_ALIGN_MIDDLE)) {
-                  c->cursus_honorum->aedile_assigned_construction =
-                      &c->constructions[i];
+                if (nk_menu_item_label(ctx, c->constructions[i].name_str, NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_MIDDLE)) {
+                  c->cursus_honorum->aedile_assigned_construction = &c->constructions[i];
                 }
               }
               nk_menu_end(ctx);
@@ -1609,6 +1601,35 @@ void gui_diplomatic_menu(struct City *c, struct nk_context *ctx) {
 
 void gui_military_menu(struct City *c, struct nk_context *ctx) {
   // TODO: Implement military menu
+  const nk_flags win_flags = NK_WINDOW_MOVABLE | NK_WINDOW_BORDER |
+                             NK_WINDOW_CLOSABLE | NK_WINDOW_MINIMIZABLE;
+  const uint32_t win_width = 500;
+  const uint32_t win_height = 500;
+  const struct nk_rect win_rect =
+      nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
+              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
+              win_width, win_height);
+  if (nk_begin(ctx, "Military", win_rect, win_flags)) {
+    nk_layout_row_dynamic(ctx, 0.0f, 1);
+    if (nk_button_label(ctx, "Raise legion")) {
+      // TODO: Raise a legion
+    }
+
+    if (nk_button_label(ctx, "Strengthen the Rhine border")) {
+      // TODO:
+    }
+
+    if (nk_button_label(ctx, "Strengthen the Danube border")) {
+      // TODO:
+    }
+
+    if (nk_button_label(ctx, "Launch military campaign ..")) {
+      // TODO:
+    }
+
+    // TODO: List legions?
+  }
+  nk_end(ctx);
 }
 
 void gui_help_menu(struct City *c, struct nk_context *ctx) {
@@ -1886,8 +1907,7 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     if (nk_tree_push(ctx, NK_TREE_TAB, "Game speed", NK_MAXIMIZED)) {
       float ratio[] = {0.05f, 0.05f, 0.85f, 0.05f};
       nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 4, ratio);
-      char curr_speed[2];
-      snprintf(curr_speed, sizeof(curr_speed), "%i", simulation_speed);
+      char curr_speed[2]; snprintf(curr_speed, sizeof(curr_speed), "%u", simulation_speed);
       nk_label(ctx, curr_speed, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
       nk_label(ctx, "0", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
       nk_slider_int(ctx, 0, (int *)&simulation_speed, 9, 1);
