@@ -611,19 +611,17 @@ struct CursusHonorum {
 // Roman Lex (pl. leges)
 struct Law {
   bool passed;
-  char *name_str;
+  char *name_str;        // TODO: Classify the strings used and where they fit in the UI
   char *description_str;
   char *help_str;
   enum CapacityType type;
   uint8_t cost;     // Quantify of power points
   uint8_t cost_lng; // How many ticks the cost is incurred
   struct Date date_passed;
-  // TODO: Able to repeal laws?
   struct Effect *effect;
   void (*gui_handler)(struct nk_context *ctx, struct Law *l);
 };
 
-// TODO: Limit to only one type of each Construction type
 struct Construction {
   float construction_delay_risk; // TODO: Implement it ...
   bool construction_in_progress; // Active construction site or not
@@ -824,6 +822,9 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->name = c->name;
   c1->num_effects = c->num_effects;
   c1->effects = c->effects;
+  c1->military_capacity = c->military_capacity;
+  c1->political_capacity = c->political_capacity;
+  c1->diplomatic_capacity = c->diplomatic_capacity;
   c1->num_effects_capacity = c->num_effects_capacity;
   c1->num_construction_projects = c->num_construction_projects;
   c1->construction_projects = c->construction_projects;
@@ -918,8 +919,8 @@ void building_maintenance_tick_effect(struct Effect *e, const struct City *c,
 void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
   assert(c); assert(c1); assert(e->arg);
   const struct FarmArgument *arg = (struct FarmArgument *)e->arg;
-  const float output_effectiveness = fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
-  c1->food_production += output_effectiveness * c->produce_values[arg->produce] * arg->area;
+  // FIXME: const float output_effectiveness = fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
+  c1->food_production += 1.0f * c->produce_values[arg->produce] * arg->area;
   c1->land_area_used += arg->area;
 }
 
@@ -1516,7 +1517,7 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
             continue;
           }
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
-            nk_layout_row_dynamic(ctx, 50.0f, 1);
+            nk_layout_row_dynamic(ctx, 100.0f, 1);
             nk_label_wrap(ctx, law->description_str);
             nk_layout_row_dynamic(ctx, 0.0f, 1);
             nk_labelf_wrap(ctx, "Passed: %u BC", law->date_passed.year);
@@ -1529,14 +1530,15 @@ void gui_political_menu(struct City *c, struct nk_context *ctx) {
         }
         break;
       case 1:
-        nk_layout_row_dynamic(ctx, 0.0f, 1);
         for (size_t i = 0; i < c->num_available_laws; i++) {
           struct Law *law = &c->available_laws[i];
           if (law->passed) {
             continue;
           }
           if (nk_tree_push(ctx, NK_TREE_TAB, law->name_str, NK_MINIMIZED)) {
+            nk_layout_row_dynamic(ctx, 100.0f, 1);
             nk_label_wrap(ctx, law->description_str);
+            nk_layout_row_dynamic(ctx, 0.0f, 1);
             if (nk_button_label(ctx, "Enact")) {
               // TODO: Implement positive/negative feedback based success or not
               city_enact_law(c, law);
@@ -2066,14 +2068,12 @@ int main(void) {
   /* SDL setup */
   SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
-                      SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_WindowFlags win_flags =
-      SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
+  SDL_WindowFlags win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
   if (CONFIG.FULLSCREEN) {
     win_flags |= SDL_WINDOW_FULLSCREEN;
   }
@@ -2101,8 +2101,7 @@ int main(void) {
     const float FONT_HEIGHT = 25.0f;
     const char *font_name = "fonts/CONSTANTINE/Constantine.ttf";
     const char *font_filepath = str_concat_new(CONFIG.FILEPATH_RSRC, font_name);
-    struct nk_font *font =
-        nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
+    struct nk_font *font = nk_font_atlas_add_from_file(atlas, font_filepath, FONT_HEIGHT, NULL);
     if (font_filepath) {
       free((void *)font_filepath);
     }
@@ -2144,8 +2143,8 @@ int main(void) {
 
   struct City *city = &cities[0];
   city->name = "Eboracum";
-  city->gold = 10.0f;
-  city->population = 300;
+  city->gold = 15.0f;
+  city->population = 300 + 30 * uniform_random();
   city->land_area = 10;
   city->military_capacity = 1;
   city->political_capacity = 1;
@@ -2476,7 +2475,7 @@ int main(void) {
 
   struct Law land_tax = {.name_str = "Lex Tributum Soli",
                          .description_str =
-                             "Roman land tax based on size of the land. Costs "
+                             "Roman land tax based on size of the land. Costs"
                              "1 Poltical power of the course of 3 months.",
                          .cost = 1,
                          .cost_lng = 3 * 30,
