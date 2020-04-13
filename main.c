@@ -1388,10 +1388,8 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
           continue;
         }
 
-        // TODO: Add visual indication or smt to show that building failed
-        // or started
-        static const float ratio[] = {0.05f, 0.35f, 0.25f,
-                                      0.15f, 0.05f, 0.125f};
+        // TODO: Add visual indication or smt to show that building failed or started
+        static const float ratio[] = {0.05f, 0.35f, 0.25f, 0.15f, 0.05f, 0.125f};
         if (proj->num_effects == 1) {
           nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 6, ratio);
 
@@ -1401,13 +1399,10 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
           }
 
           // TODO: Last variant of buildings name will not be shown ...
-          nk_label(ctx, proj->name_str,
-                   NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+          nk_label(ctx, proj->name_str, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
 
-          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-                    "%.2f gold", proj->cost);
-          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days",
-                    proj->construction_time);
+          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%.2f gold", proj->cost);
+          nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days", proj->construction_time);
 
           nk_spacing(ctx, 1);
 
@@ -1426,13 +1421,10 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
                 help_menu_proj = proj;
               }
 
-              nk_label(ctx, proj->effect[j].name_str,
-                       NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+              nk_label(ctx, proj->effect[j].name_str, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
 
-              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-                        "%.2f gold", proj->cost);
-              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE,
-                        "%ld days", proj->construction_time);
+              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%.2f gold", proj->cost);
+              nk_labelf(ctx, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE, "%ld days", proj->construction_time);
 
               nk_spacing(ctx, 1);
 
@@ -1458,8 +1450,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
         const float ratio[2] = {0.85f, 0.15f};
         nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 2, ratio);
 
-        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "%s - %s",
-                  con->name_str, con->description_str);
+        nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "%s - %s", con->name_str, con->description_str);
 
         if (con->gui_construction_management) {
           // Construction detail menu
@@ -1778,10 +1769,9 @@ void update_gui(struct City *c, struct nk_context *ctx) {
   const uint32_t win_width = CONFIG.RESOLUTION.width;
   const uint32_t win_height = CONFIG.RESOLUTION.height;
 
-  const struct nk_rect win_rect =
-      nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
-              (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
-              win_width, win_height);
+  const struct nk_rect win_rect = nk_rect((CONFIG.RESOLUTION.width / 2.0f) - (win_width / 2.0f),
+                                        (CONFIG.RESOLUTION.height / 2.0f) - (win_height / 2.0f),
+                                        win_width, win_height);
 
   char *date_str = get_new_date_str(date, DATE_FORMAT_SHORT);
   const char *win_title = str_concat_new(c->name, date_str);
@@ -1808,7 +1798,6 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     nk_layout_row_dynamic(ctx, GUI.icon_size.x + 10.0f, 1);
     if (nk_group_begin(ctx, "gui_main_windows", NK_WINDOW_NO_SCROLLBAR)) {
       nk_layout_row_static(ctx, GUI.icon_size.x, GUI.icon_size.y, 17);
-
       {
         nk_spacing(ctx, 2);
 
@@ -2590,8 +2579,7 @@ int main(void) {
     }
     nk_input_end(ctx);
     update_gui(&cities[cidx], ctx);
-    SDL_GetWindowSize(sdl_window, &CONFIG.RESOLUTION.width,
-                      &CONFIG.RESOLUTION.height);
+    SDL_GetWindowSize(sdl_window, &CONFIG.RESOLUTION.width, &CONFIG.RESOLUTION.height);
     glViewport(0, 0, CONFIG.RESOLUTION.width, CONFIG.RESOLUTION.height);
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
