@@ -724,7 +724,7 @@ struct City {
   // Flags
   bool diplomacy_enabled;
   // Farming
-  float *produce_values; // Value in terms of produce
+  float *produce_values; // Gold and nutriental (food) value in terms of produce
   size_t land_area;      // Land area available (used by farms, mansio, castrum)
   size_t land_area_used; // Land used
   float food_production; // Excess food creates population & gold
@@ -842,8 +842,7 @@ city_add_construction_project(struct City *c, const struct Construction con) {
 struct Law *city_add_law(struct City *c, const struct Law l) {
   if (c->num_available_laws + 1 > c->num_available_laws_capacity) {
     c->num_available_laws_capacity += 10;
-    c->available_laws = realloc(
-        c->available_laws, sizeof(struct Law) * c->num_available_laws_capacity);
+    c->available_laws = realloc(c->available_laws, sizeof(struct Law) * c->num_available_laws_capacity);
   }
   c->available_laws[c->num_available_laws++] = l;
   return &c->available_laws[c->num_available_laws_capacity - 1];
@@ -851,27 +850,41 @@ struct Law *city_add_law(struct City *c, const struct Law l) {
 
 /// Calculates the population changes this timestep
 void population_calculation(const struct City *c, struct City *c1) {
-  assert(c);
-  assert(c1);
+  assert(c); assert(c1);
 
   // TODO: Import / Export of foodstuffs
   // TODO: Add different produce effectiveness values instead of using the
   // current value (see farm_tick_effect)
   // TODO: Limit 1 of each type of farm (or even building)
 
-  // TODO: Bad to use avg. when I know how much of each produce is produced ...
-  float avg_food_price = 0.0f;
-  for (size_t i = 0; i < NUMBER_OF_PRODUCE; i++) {
-    avg_food_price += c->produce_values[i];
+  // Food-gold cycle
+  {
+    // TODO: Bad to use avg. when I know how much of each produce is produced ...
+    float avg_food_price = 0.0f;
+    for (size_t i = 0; i < NUMBER_OF_PRODUCE; i++) {
+      avg_food_price += c->produce_values[i];
+    }
+    avg_food_price /= NUMBER_OF_PRODUCE;
+    c1->gold += avg_food_price * (c->food_production - c->food_usage);
   }
-  avg_food_price /= NUMBER_OF_PRODUCE;
-  c1->gold += avg_food_price * (c->food_production - c->food_usage);
 
-  // Gold-food-population cycle calculations
-  c1->food_production -= c1->food_usage;
-  c1->population_delta += (int)roundf(10.0f * c1->food_production);
+  // Gold-food-population cycle
+  {
+    const float food_limit = 1000.0f * c1->food_production;
+    if (c1->population < food_limit) {
+      c1->population_delta = 1;
+    } else if (c1->population > food_limit) {
+      c1->population_delta = -1;
+    }
 
-  c1->population += c1->population_delta;
+    c1->population += c1->population_delta;
+  }
+
+  // Population-gold cycle
+  {
+    const float base_tax = 0.05f;
+    c1->gold_usage -= c1->population * 0.000001f + base_tax;
+  }
 }
 
 /// Apply and deal with the effects in place on the city
@@ -888,8 +901,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->num_effects_capacity = c->num_effects_capacity;
   c1->num_construction_projects = c->num_construction_projects;
   c1->construction_projects = c->construction_projects;
-  c1->num_construction_projects_capacity =
-      c->num_construction_projects_capacity;
+  c1->num_construction_projects_capacity = c->num_construction_projects_capacity;
   c1->num_constructions = c->num_constructions;
   c1->constructions = c->constructions;
   c1->num_constructions_capacity = c->num_constructions_capacity;
@@ -904,6 +916,7 @@ void simulate_next_timestep(const struct City *c, struct City *c1) {
   c1->num_available_laws = c->num_available_laws;
   c1->num_available_laws_capacity = c->num_available_laws_capacity;
   c1->cursus_honorum = c->cursus_honorum;
+  c1->food_production_modifier = 1.0f;
 
   // Compute effects affecting the change of rate
   for (size_t i = 0; i < c1->num_effects; i++) {
@@ -977,12 +990,10 @@ void building_maintenance_tick_effect(struct Effect *e, const struct City *c,
 }
 
 void farm_tick_effect(struct Effect *e, const struct City *c, struct City *c1) {
-  assert(e->arg);
+  assert(c); assert(c1); assert(e->arg);
   const struct FarmArgument *arg = (struct FarmArgument *)e->arg;
-  const float output_effectiveness =
-      fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
-  c1->food_production +=
-      output_effectiveness * c->produce_values[arg->produce] * arg->area;
+  const float output_effectiveness = fabs(cosf(arg->p0 + date.month + (M_PI / 12.0f))) + arg->p1;
+  c1->food_production += output_effectiveness * c->produce_values[arg->produce] * arg->area;
   c1->land_area_used += arg->area;
 }
 
@@ -1028,7 +1039,7 @@ void temple_of_vulcan_tick_effect(struct Effect *e, const struct City *c,
 
 void pops_eating_tick_effect(struct Effect *e, const struct City *c,
                              struct City *c1) {
-  const uint32_t consumption = c->population * 0.002f;
+  const uint32_t consumption = c->population * 0.001f;
   c1->food_usage += consumption;
 }
 
@@ -1238,11 +1249,8 @@ void build_construction(struct City *c, struct Construction *cp,
 
   eventlog_add_msgf(c->log, "Building of %s started ..", con->name_str);
 
-  int lng = snprintf(NULL, 0, "9999 days left, - %.2f / day",
-                     con->construction_cost) +
-            1;
-  char *description_str =
-      (char *)calloc(lng, sizeof(char)); // Filled by the building_tick_effect
+  int lng = snprintf(NULL, 0, "9999 days left, - %.2f / day", con->construction_cost) + 1;
+  char *description_str = (char *)calloc(lng, sizeof(char)); // Filled by the building_tick_effect
 
   lng = snprintf(NULL, 0, "Building %s", con->name_str) + 1;
   char *name_str = (char *)calloc(lng, sizeof(char));
@@ -1319,25 +1327,27 @@ struct nk_image nk_image_load(const char *filename) {
 void gui_farm_construction_management(struct nk_context *ctx,
                                       struct Construction *con,
                                       struct City *c) {
-  assert(con);
-  assert(ctx);
+  assert(con); assert(ctx); assert(c);
 
   struct FarmArgument *arg = (struct FarmArgument *)con->effect->arg;
   assert(arg && "Farm construction's effect lacks argument");
 
-  const float ratio[3] = {0.50f, 0.40f, 0.10f};
-  nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
+  nk_layout_row_dynamic(ctx, 0.0f, 1);
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "Food production: %lu +- %.2f", arg->area, arg->p1);
 
-  const char *tooltip_str = "Each increase in jugerum cost 1 gold";
-  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE,
-            "Current land area: %lu jugerum", arg->area);
-  nk_spacing(ctx, 1);
+  const float ratio[2] = {0.90f, 0.10f};
+  nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 2, ratio);
+
+  const char *tooltip_str = "Land area increase costs X gold where X is the current land area.";
+  nk_labelf(ctx, NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, "Land area: %lu jugerum", arg->area);
   NK_TOOLTIP(
       ctx,
       if (nk_button_symbol(ctx, NK_SYMBOL_PLUS)) {
-        if (c->gold >= 1) {
-          c->gold--;
-          arg->area++;
+        if (c->gold >= arg->area) {
+          if (1 + c->land_area_used <= c->land_area) {
+            c->gold -= (float) arg->area;
+            arg->area++;
+          }
         }
       },
       tooltip_str);
@@ -1346,8 +1356,7 @@ void gui_farm_construction_management(struct nk_context *ctx,
 void gui_forum_construction_management(struct nk_context *ctx,
                                        struct Construction *con,
                                        struct City *c) {
-  assert(con);
-  assert(ctx);
+  assert(con); assert(ctx); assert(c);
 
   struct ForumArgument *arg = (struct ForumArgument *)con->effect->arg;
   assert(arg);
@@ -1470,8 +1479,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
 
           // TODO: Positive colored buttons that are actionable
           if (nk_button_label(ctx, "Build")) {
-            build_construction(c, &c->construction_projects[i],
-                               &proj->effect[0]);
+            build_construction(c, &c->construction_projects[i], &proj->effect[0]);
           }
         } else {
           if (nk_tree_push(ctx, NK_TREE_NODE, proj->name_str, NK_MINIMIZED)) {
@@ -1495,8 +1503,7 @@ void gui_construction_menu(struct City *c, struct nk_context *ctx) {
               nk_spacing(ctx, 1);
 
               if (nk_button_label(ctx, "Build")) {
-                build_construction(c, &c->construction_projects[i],
-                                   &proj->effect[j]);
+                build_construction(c, &c->construction_projects[i], &proj->effect[j]);
               }
             }
             nk_tree_pop(ctx);
@@ -1927,17 +1934,13 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     }
 
     nk_layout_row_dynamic(ctx, 0.0f, 3);
-    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-              "Population: %lu (%i)", c->population, c->population_delta);
-    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-              "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
-    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Food: %.2f",
-              c->food_production - c->food_usage);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Population: %lu (%i)", c->population, c->population_delta);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Gold: %.2f (%.2f)", c->gold, -c->gold_usage);
+    nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Food: %.2f", c->food_production - c->food_usage);
 
     if (nk_tree_push(ctx, NK_TREE_TAB, "Statistics", NK_MINIMIZED)) {
       nk_layout_row_dynamic(ctx, 0.0f, 1);
-      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED,
-                "Land area: %zu / %zu", c->land_area_used, c->land_area);
+      nk_labelf(ctx, NK_TEXT_ALIGN_MIDDLE | NK_TEXT_ALIGN_CENTERED, "Land area: %zu / %zu", c->land_area_used, c->land_area);
       nk_tree_pop(ctx);
     }
 
@@ -1958,8 +1961,11 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     }
 
     if (nk_tree_push(ctx, NK_TREE_TAB, "Game speed", NK_MAXIMIZED)) {
-      float ratio[] = {0.05f, 0.90f, 0.05f};
-      nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 3, ratio);
+      float ratio[] = {0.05f, 0.05f, 0.85f, 0.05f};
+      nk_layout_row(ctx, NK_DYNAMIC, 0.0f, 4, ratio);
+      char curr_speed[2];
+      snprintf(curr_speed, sizeof(curr_speed), "%i", simulation_speed);
+      nk_label(ctx, curr_speed, NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
       nk_label(ctx, "0", NK_TEXT_ALIGN_RIGHT | NK_TEXT_ALIGN_MIDDLE);
       nk_slider_int(ctx, 0, (int *)&simulation_speed, 9, 1);
       nk_label(ctx, "1", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
@@ -2191,8 +2197,7 @@ int main(void) {
 
   GUI.icon_size = nk_vec2(64, 64);
 
-  char *filepath =
-      str_concat_new(CONFIG.FILEPATH_RSRC, "icons/ionic-column.png");
+  char *filepath = str_concat_new(CONFIG.FILEPATH_RSRC, "icons/ionic-column.png");
   GUI.construction_icon = nk_image_load(filepath);
   free(filepath);
 
@@ -2229,18 +2234,20 @@ int main(void) {
   city->gold = 10.0f;
   city->population = 300;
   city->land_area = 10;
+  city->military_capacity = 1;
+  city->political_capacity = 1;
+  city->diplomatic_capacity = 1;
   city->produce_values = (float *)calloc(sizeof(float), NUMBER_OF_PRODUCE);
-  city->produce_values[Grapes] = 0.35f;
-  city->produce_values[Wheat] = 0.45f;
+  city->produce_values[Grapes] = 0.125f;
+  city->produce_values[Wheat] = 0.55f;
+  city->produce_values[Olives] = 0.25f;
   struct EventLog log = eventlog_new();
   city->log = &log;
-  city->cursus_honorum =
-      (struct CursusHonorum *)calloc(sizeof(struct CursusHonorum), 1);
+  city->cursus_honorum = (struct CursusHonorum *)calloc(sizeof(struct CursusHonorum), 1);
 
   struct Effect port_ostia_construction_effect = {.name_str = "Port Ostia",
                                                   .description_str = "",
-                                                  .tick_effect =
-                                                      &port_ostia_tick_effect,
+                                                  .tick_effect = &port_ostia_tick_effect,
                                                   .duration = FOREVER};
 
   struct Construction port_ostia = {
@@ -2281,8 +2288,8 @@ int main(void) {
   struct FarmArgument grape_farm_arg = {
       .produce = Grapes,
       .area = 1,
-      .p0 = 1.0f * uniform_random(),
-      .p1 = 0.25f + ((uniform_random() / 20.0f) - 0.10f)};
+      .p0 = uniform_random(),
+      .p1 = 0.25f + (uniform_random() / 20.0f)};
 
   struct Effect grape_farm_construction_effect = {
       .name_str = "Grape farm",
@@ -2294,8 +2301,8 @@ int main(void) {
   struct FarmArgument wheat_farm_arg = {
       .produce = Wheat,
       .area = 1,
-      .p0 = 1.0f * uniform_random(),
-      .p1 = 0.25f + ((uniform_random() / 20.0f) - 0.10f)};
+      .p0 = uniform_random(),
+      .p1 = 0.25f + (uniform_random() / 20.0f)};
 
   struct Effect wheat_farm_construction_effect = {
       .name_str = "Wheat farm",
@@ -2307,8 +2314,8 @@ int main(void) {
   struct FarmArgument olive_farm_arg = {
       .produce = Olives,
       .area = 1,
-      .p0 = 1.0f * uniform_random(),
-      .p1 = 0.25f + ((uniform_random() / 20.0f) - 0.10f)};
+      .p0 = uniform_random(),
+      .p1 = 0.25f + (uniform_random() / 20.0f)};
 
   struct Effect olive_farm_construction_effect = {
       .name_str = "Olive farm",
@@ -2333,10 +2340,11 @@ int main(void) {
       .num_effects = 3,
       .gui_construction_management = gui_farm_construction_management};
 
+  city_add_construction(city, farm);
+
   struct Effect basilica_construction_effect = {.name_str = "Basilica",
                                                 .duration = FOREVER,
-                                                .tick_effect =
-                                                    basilica_tick_effect};
+                                                .tick_effect = basilica_tick_effect};
 
   struct Construction basilica = {
       .cost = 15.0f,
