@@ -17,21 +17,7 @@
 // NOTE: Used for development
 #define DEBUG
 
-// NOTE: Choice of UI: terminal or GUI based
-#define USER_INTERFACE_GUI
-// #define USER_INTERFACE_TUI
 // TODO: Moved to config file, implement here
-
-static WINDOW *root = NULL; // ncurses root window
-#define C_KEY_DOWN 258
-#define C_KEY_UP 259
-#define C_KEY_LEFT 260
-#define C_KEY_RIGHT 261
-#define C_KEY_ENTER 10
-#define C_KEY_ESCAPE 27
-
-#ifdef USER_INTERFACE_GUI
-
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
 
@@ -55,7 +41,6 @@ static WINDOW *root = NULL; // ncurses root window
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "include/stb_image.h"
-#endif
 
 #include "include/cJSON.h"
 
@@ -137,57 +122,7 @@ const char *open_file(const char *filepath) {
   return file_contents;
 }
 
-/***** ncurses utility functions *****/
-/// Window, MoVe, CLearR, PRINT, Word
-static inline void wmvclrprintw(WINDOW *win, int y, int x, const char *fmt,
-                                ...) {
-  wmove(win, y, x);
-  wclrtoeol(win);
-  va_list args;
-  va_start(args, fmt);
-  vw_printw(win, fmt, args);
-  va_end(args);
-}
-
-/// Window, MoVe, CLearR, PRINT
-static inline void wmvclrprint(WINDOW *win, int y, int x, const char *str) {
-  wmove(win, y, x);
-  wclrtoeol(win);
-  wprintw(win, str);
-}
-
-/// Window, MoVe, PRINT
-static inline void wmvprint(WINDOW *win, int y, int x, const char *str) {
-  wmove(win, y, x);
-  wprintw(win, str);
-}
-
-/// Window, MoVe, PRINT, Word
-static inline void wmvprintw(WINDOW *win, int y, int x, const char *fmt, ...) {
-  wmove(win, y, x);
-  va_list args;
-  va_start(args, fmt);
-  vw_printw(win, fmt, args);
-  va_end(args);
-}
-
-// Allocs a new window and sets a box around it plus displays it
-WINDOW *create_newwin(const int height, const int width, const int starty,
-                      const int startx) {
-  WINDOW *local_win = newwin(height, width, starty, startx);
-  box(local_win, 0, 0);
-  wrefresh(local_win);
-  return local_win;
-}
-
-void destroy_win(WINDOW *win) {
-  wborder(win, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
-  wclear(win);
-  wrefresh(win);
-  delwin(win);
-}
-
-static inline float uniform_random() { return rand() / RAND_MAX; }
+static  float uniform_random() { return rand() / RAND_MAX; }
 
 // NOTE: Julian calendar introduced Jan. 1st of 45 BC
 struct Date {
@@ -203,7 +138,7 @@ static struct Date date;
 // NOTE: Modern Roman numerals (I, V, X, L, C, D, M), (1, 5, 10, 50, 100, 500,
 // 1000) NOTE: Using subtractive notation API: Callee-responsible for freeing
 // the returned pointer
-static inline char *roman_numeral_new_str(const uint32_t n) {
+static  char *roman_numeral_new_str(const uint32_t n) {
   const div_t M = div(n, 1000);
   const div_t C = div(M.rem, 100);
   const div_t X = div(C.rem, 10);
@@ -359,7 +294,7 @@ static inline char *roman_numeral_new_str(const uint32_t n) {
   return str;
 }
 
-static inline const char *get_month_str(const struct Date date) {
+static  const char *get_month_str(const struct Date date) {
   assert(date.month <= 11 && "Invalid date passed to get_month_str");
   static const char *month_strs[] = {"Ianuarius", "Februarius", "Martius",
                                      "Aprilis",   "Maius",      "Iunius",
@@ -368,7 +303,7 @@ static inline const char *get_month_str(const struct Date date) {
   return month_strs[date.month];
 }
 
-static inline uint32_t get_days_in_month(const struct Date date) {
+static  uint32_t get_days_in_month(const struct Date date) {
   assert(date.month <= 11 && "Invalid date passed to get_days_in_month");
   static const uint32_t month_lngs[] = {31, 28, 31, 30, 31, 30,
                                         31, 31, 30, 31, 30, 31};
@@ -440,7 +375,7 @@ static enum Comparison compare_date(const struct Date a, const struct Date b) {
   assert(false && "Date comparison does not work.");
 }
 
-static inline void increment_date(struct Date *date) {
+static  void increment_date(struct Date *date) {
   if (date->day + 1 > get_days_in_month(*date) - 1) {
     date->month++;
     date->day = 0;
@@ -461,7 +396,7 @@ static inline void increment_date(struct Date *date) {
 static uint64_t timestep = 0;
 static uint32_t simulation_speed = 1;
 
-static inline uint32_t ms_per_timestep_for(const uint32_t speed) {
+static  uint32_t ms_per_timestep_for(const uint32_t speed) {
   if (speed == 0) {
     return 0;
   }
@@ -533,7 +468,7 @@ const char *get_season_str(const struct Date *date) {
   return "";
 }
 
-static inline bool is_winter(const struct Date *date) {
+static bool is_winter(const struct Date *date) {
   return strncmp(WINTER, get_season_str(date), strlen(WINTER)) == 0;
 }
 
@@ -1279,7 +1214,6 @@ void help_menu(struct City *c) {
   // Emacs's explain-function
 }
 
-#ifdef USER_INTERFACE_GUI
 /// GUI specific resources initialized once at startup
 static struct {
   struct nk_vec2 icon_size;
@@ -2002,7 +1936,6 @@ void update_gui(struct City *c, struct nk_context *ctx) {
     gui_popup(ctx, c, &c->popups[i]);
   }
 }
-#endif
 
 // Parses the config.json at the project root and inits the Config struct at
 // startup
@@ -2139,7 +2072,6 @@ int main(void) {
   srand(time(NULL));
   parse_config_file();
 
-#ifdef USER_INTERFACE_GUI
   /* SDL setup */
   SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS);
@@ -2216,16 +2148,6 @@ int main(void) {
   filepath = str_concat_new(CONFIG.FILEPATH_RSRC, "icons/organigram.png");
   GUI.construction_detail_icon = nk_image_load(filepath);
   free(filepath);
-#endif
-
-#ifdef USER_INTERFACE_TERMINAL
-  root = initscr();     /* initialize the curses library */
-  cbreak();             /* Line buffering disabled pass on everything to me*/
-  keypad(stdscr, true); /* For keyboard arrows 	*/
-  noecho();             /* Do not echo out input */
-  nodelay(root, true);  /* Make getch non-blocking */
-  refresh();
-#endif
 
   struct City *cities = (struct City *)calloc(2, sizeof(struct City));
 
@@ -2602,7 +2524,6 @@ int main(void) {
       SDL_Delay(1000);
     }
 
-#ifdef USER_INTERFACE_GUI
     /* Input */
     SDL_Event evt;
     nk_input_begin(ctx);
@@ -2679,65 +2600,6 @@ int main(void) {
 
     // TODO: Handle end of game states
     enum GameState game_state = check_gamestate(&cities[cidx]);
-#endif
-
-#ifdef USER_INTERFACE_TERMINAL
-    werase(root);
-    update_tui(&cities[cidx]);
-
-    char ch = getch();
-
-    switch (ch) {
-    case ' ':
-    case '0':
-      simulation_speed = 0;
-      break;
-    case '1':
-      simulation_speed = 1;
-      break;
-    case '2':
-      simulation_speed = 2;
-      break;
-    case '3':
-      simulation_speed = 3;
-      break;
-    case '4':
-      simulation_speed = 4;
-      break;
-    case '5':
-      simulation_speed = 5;
-      break;
-    case '6':
-      simulation_speed = 6;
-      break;
-    case '7':
-      simulation_speed = 7;
-      break;
-    case '8':
-      simulation_speed = 8;
-      break;
-    case '9':
-      simulation_speed = 9;
-      break;
-    case ' ':
-      simulation_speed = 0;
-      break;
-    case 'h':
-      help_menu(&cities[cidx]);
-      break;
-    case 'q':
-      if (quit_menu(&cities[cidx])) {
-        return 0;
-      }
-      break;
-    case 'c':
-      construction_menu(&cities[cidx]);
-      break;
-    case 'p':
-      policy_menu(&cities[cidx]);
-      break;
-    }
-#endif
   }
   if (CONFIG.FILEPATH_ROOT) {
     free((void *)CONFIG.FILEPATH_ROOT);
@@ -2748,13 +2610,7 @@ int main(void) {
   if (CONFIG.FILEPATH_SAVE) {
     free((void *)CONFIG.FILEPATH_SAVE);
   }
-#ifdef USER_INTERFACE_GUI
   SDL_Quit();
-#endif
-// TODO: Make sure to clean up some library calls in order to make valgrinding
-// this a bit easier later on
-#ifdef USER_INTERFACE_TUI
-  endwin();
-#endif
+  // TODO: Make sure to clean up some library calls in order to make valgrinding this a bit easier later on
   return 0;
 }
